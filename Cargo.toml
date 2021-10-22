@@ -7,7 +7,9 @@ edition = "2021"
 crate-type = ["cdylib"]
 
 [dependencies]
-log = "0.4.14"
 # obs-wrapper = {git = "https://github.com/bennetthardwick/rust-obs-plugins"}
 obs-wrapper = {path = "../rust-obs-plugins"}
 tiny-skia = "0.6.1"
+gilrs-core = "0.3.1"
+log = "0.4.14"
+minifb = "0.19.3"

@@ -4,6 +4,8 @@ use obs_wrapper::{
 };
 use tiny_skia::{Color, FillRule, Paint, PathBuilder, Pixmap, Transform};
 
+mod gamepad;
+
 obs_register_module!(GamepadModule);
 struct GamepadModule {
     context: ModuleContext,
