@@ -1,0 +1,13 @@
+[package]
+name = "obs-gamepad"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+log = "0.4.14"
+# obs-wrapper = {git = "https://github.com/bennetthardwick/rust-obs-plugins"}
+obs-wrapper = {path = "../rust-obs-plugins"}
+tiny-skia = "0.6.1"
