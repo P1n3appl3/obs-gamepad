@@ -1,15 +1,17 @@
 mod gamepad;
-use std::time;
 
-use gilrs_core::{Gamepad, Gilrs};
+use std::time::{Duration, Instant};
+
+use gilrs_core::Gilrs;
 use minifb::{Key, ScaleMode, Window, WindowOptions};
-use tiny_skia::Pixmap;
+use tiny_skia::{Color, Pixmap};
+
+use gamepad::{Button, Gamepad};
 
 fn main() {
     let mut gilrs = Gilrs::new().unwrap();
-    let mut gamepad = gamepad::Gamepad::new(&mut gilrs);
-    println!("id: {}", gamepad.id);
-
+    let mut gamepad = Gamepad::new(&mut gilrs);
+    gamepad.add_debug_inputs(&mut gilrs);
     let width = 500;
     let height = 500;
     let mut img = Pixmap::new(width as u32, height as u32).unwrap();
@@ -23,7 +25,7 @@ fn main() {
         panic!("{}", e);
     });
 
-    window.limit_update_rate(Some(time::Duration::from_micros(16666)));
+    window.limit_update_rate(Some(Duration::from_micros(16666)));
     while window.is_open()
         && !(window.is_key_down(Key::Escape) || window.is_key_down(Key::Q))
     {
