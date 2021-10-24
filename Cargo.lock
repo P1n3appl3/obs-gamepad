@@ -603,7 +603,9 @@ dependencies = [
  "log",
  "minifb",
  "obs-wrapper",
+ "serde",
  "tiny-skia",
+ "toml",
 ]
 
 [[package]]
@@ -906,6 +908,9 @@ name = "serde"
 version = "1.0.130"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f12d06de37cf59146fbdecab66aa99f9fe4f78722e3607577a5375d66bd0c913"
+dependencies = [
+ "serde_derive",
+]
 
 [[package]]
 name = "serde_derive"
@@ -1079,6 +1084,15 @@ dependencies = [
  "cfg-if 1.0.0",
  "png",
  "safe_arch",
+]
+
+[[package]]
+name = "toml"
+version = "0.5.8"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a31142970826733df8241ef35dc040ef98c679ab14d7c3e54d827099b3acecaa"
+dependencies = [
+ "serde",
 ]
 
 [[package]]

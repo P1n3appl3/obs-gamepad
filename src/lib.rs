@@ -1,10 +1,11 @@
+mod gamepad;
+mod config;
+
 use log::{error, info, warn};
 use obs_wrapper::{
     graphics::*, log::Logger, obs_register_module, obs_string, prelude::*, source::*,
 };
 use tiny_skia::{Color, FillRule, Paint, PathBuilder, Pixmap, Transform};
-
-mod gamepad;
 
 obs_register_module!(GamepadModule);
 struct GamepadModule {
@@ -57,7 +58,7 @@ impl CreatableSource<State> for Source {
         let width = 500; // source.get_base_width
         let height = 500;
         let color = Color::from_rgba8(50, 127, 150, 200);
-        info!("Created source");
+        info!("Created gamepad source");
         State {
             img: Pixmap::new(width, height).unwrap(),
             texture: GraphicsTexture::new(width, height, GraphicsColorFormat::RGBA),
