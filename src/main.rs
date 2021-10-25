@@ -10,7 +10,16 @@ use minifb::{Key, ScaleMode, Window, WindowOptions};
 use notify::{self, DebouncedEvent, RecursiveMode, Watcher};
 use tiny_skia::Pixmap;
 
-use gamepad::Gamepad;
+use crate::gamepad::Gamepad;
+
+fn create_image(gamepad: &Gamepad) -> Pixmap {
+    let bounds = gamepad.bounds();
+    let width = bounds.right() as usize;
+    let height = bounds.bottom() as usize;
+    Pixmap::new(width as u32, height as u32).unwrap()
+}
+
+const FPS: Option<Duration> = Some(Duration::from_micros(16666));
 
 fn main() -> Result<(), ()> {
     let mut gilrs = Gilrs::new().unwrap();
@@ -40,22 +49,19 @@ fn main() -> Result<(), ()> {
         }
     };
 
-    let bounds = gamepad.bounds();
-    let width = bounds.right() as usize;
-    let height = bounds.bottom() as usize;
-    let mut img = Pixmap::new(width as u32, height as u32).unwrap();
-    let mut buf = vec![0u32; width * height];
-
     let options = WindowOptions {
         resize: false,
         scale_mode: ScaleMode::Stretch,
         ..Default::default()
     };
-    let mut window = Window::new("Test", width, height, options).unwrap_or_else(|e| {
-        panic!("{}", e);
-    });
 
-    window.limit_update_rate(Some(Duration::from_micros(16666)));
+    let mut img = create_image(&gamepad);
+    let mut width = img.width() as usize;
+    let mut height = img.height() as usize;
+    let mut buf = vec![0u32; width * height];
+    let mut window = Window::new("Test", width, height, options).unwrap();
+    window.limit_update_rate(FPS);
+
     let mut times = 0;
     let mut total = 0u128;
     while window.is_open()
@@ -69,6 +75,19 @@ fn main() -> Result<(), ()> {
                         Ok(config) => {
                             println!("Reloaded config...");
                             gamepad.load_config(&mut gilrs, &config);
+                            let bounds = gamepad.bounds();
+                            if width != bounds.right() as usize
+                                || height != bounds.bottom() as usize
+                            {
+                                println!("Resized, making new window...");
+                                img = create_image(&gamepad);
+                                width = img.width() as usize;
+                                height = img.height() as usize;
+                                buf = vec![0u32; width * height];
+                                window =
+                                    Window::new("Test", width, height, options).unwrap();
+                                window.limit_update_rate(FPS);
+                            }
                         }
                         Err(e) => println!("Config reload failed: {}", e),
                     }
@@ -76,6 +95,7 @@ fn main() -> Result<(), ()> {
                 _ => {}
             }
         }
+
         let start = Instant::now();
         gamepad.update(&mut gilrs);
         gamepad.render(&mut img);

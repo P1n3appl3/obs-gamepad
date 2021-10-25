@@ -6,10 +6,8 @@ use serde::{
 };
 use tiny_skia::{self, Path, PathBuilder};
 
-use crate::gamepad;
-
 #[rustfmt::skip]
-fn rounded_rect(x: f32, y: f32, width: f32, height: f32, radius: f32) -> Path {
+pub fn rounded_rect(x: f32, y: f32, width: f32, height: f32, radius: f32) -> Path {
     const K: f32 = 4.0 * (SQRT_2 - 1.0) / 3.0; // maths
     let left = x;
     let top = y;
@@ -52,6 +50,18 @@ pub struct Color {
     pub a: u8,
 }
 
+impl Default for Color {
+    fn default() -> Self {
+        Color::new(0, 0, 0, 0xff)
+    }
+}
+
+impl From<Color> for tiny_skia::Color {
+    fn from(c: Color) -> Self {
+        tiny_skia::Color::from_rgba8(c.r, c.g, c.b, c.a)
+    }
+}
+
 impl Color {
     const fn new(r: u8, g: u8, b: u8, a: u8) -> Self {
         Self { r, g, b, a }
@@ -81,12 +91,6 @@ impl Color {
             (n & 0xf0) as u8,
             (n << 4) as u8,
         )
-    }
-}
-
-impl From<Color> for tiny_skia::Color {
-    fn from(c: Color) -> Self {
-        tiny_skia::Color::from_rgba8(c.r, c.g, c.b, c.a)
     }
 }
 
@@ -138,13 +142,22 @@ impl<'de> Deserialize<'de> for Color {
 }
 
 #[derive(Clone, Copy, Debug, Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
 pub enum ButtonShape {
-    Circle(f32),
+    Circle {
+        radius: f32,
+    },
     RoundedRect {
         width: f32,
         height: f32,
         radius: f32,
     },
+}
+
+impl Default for ButtonShape {
+    fn default() -> Self {
+        Self::Circle { radius: 40.0 }
+    }
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -154,6 +167,7 @@ pub struct Button {
     pub shape: Option<ButtonShape>,
     pub fill: Option<Color>,
     pub fill_active: Option<Color>,
+    pub weight: Option<f32>,
     pub outline: Option<Color>,
     pub outline_active: Option<Color>,
 }
@@ -163,45 +177,53 @@ pub struct Stick {
     pub pos: (f32, f32),
     pub x_axis: u8,
     pub y_axis: u8,
-    pub invert_x: Option<bool>,
-    pub invert_y: Option<bool>,
+    #[serde(default)]
+    pub invert_x: bool,
+    #[serde(default)]
+    pub invert_y: bool,
     pub radius: Option<f32>,
-    pub gate_radius: Option<f32>,
     pub displacement: Option<f32>,
     pub fill: Option<Color>,
     pub fill_active: Option<Color>,
     pub outline_weight: Option<f32>,
     pub outline: Option<Color>,
     pub outline_active: Option<Color>,
-    pub gate_weight: Option<f32>,
+    pub gate_radius: Option<f32>,
     pub gate: Option<Color>,
     pub gate_active: Option<Color>,
+    pub gate_weight: Option<f32>,
 }
 
-fn default_fill() -> Color {
+const fn default_fill() -> Color {
     Color::new(127, 127, 127, 127)
 }
 
-fn default_active() -> Color {
+const fn default_active() -> Color {
     Color::new(34, 59, 224, 200)
 }
 
-fn default_shape() -> ButtonShape {
-    ButtonShape::Circle(30.0)
+const fn default_stick() -> f32 {
+    40.0
 }
 
 #[derive(Clone, Debug, Deserialize)]
 pub struct Gamepad {
-    #[serde(default = "default_fill")]
-    pub active: Color,
     #[serde(default = "default_active")]
+    pub active: Color,
+    #[serde(default = "default_fill")]
     pub inactive: Color,
     #[serde(default)]
     pub outline: Option<Color>,
-    #[serde(default = "default_shape")]
+    #[serde(default)]
+    pub weight: Option<f32>,
+    #[serde(default)]
     pub button_shape: ButtonShape,
+    #[serde(default = "default_stick")]
+    pub stick_radius: f32,
     #[serde(default)]
+    pub gate_radius: Option<f32>,
+    #[serde(default, rename = "button")]
     pub buttons: Vec<Button>,
-    #[serde(default)]
+    #[serde(default, rename = "stick")]
     pub sticks: Vec<Stick>,
 }

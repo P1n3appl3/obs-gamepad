@@ -7,10 +7,6 @@ use tiny_skia::{
     Color, FillRule, Paint, Path, PathBuilder, Pixmap, Rect, Stroke, Transform,
 };
 
-fn remap(from: (f32, f32), to: (f32, f32), s: f32) -> f32 {
-    to.0 + (s - from.0) * (to.1 - to.0) / (from.1 - from.0)
-}
-
 fn combine(a: Rect, b: Rect) -> Rect {
     Rect::from_ltrb(
         a.left().min(b.left()),
@@ -26,18 +22,34 @@ fn expand(r: Rect, f: f32) -> Rect {
 }
 
 #[derive(Clone, Debug)]
+pub struct ColorPair {
+    active: Color,
+    inactive: Color,
+}
+
+impl ColorPair {
+    pub fn get(&self, active: bool) -> Color {
+        if active {
+            self.active
+        } else {
+            self.inactive
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
 pub struct Button {
     pub id: u32,
     pub id_index: u8,
     pub pressed: bool,
     pub path: Path,
-    pub fill: (Color, Color),
-    pub outline: Option<(Color, Color, f32)>,
+    pub fill: ColorPair,
+    pub outline: Option<(ColorPair, f32)>,
 }
 
 impl Button {
     pub fn bounds(&self) -> Rect {
-        if let Some((_, _, width)) = self.outline {
+        if let Some((_, width)) = self.outline {
             expand(self.path.bounds(), width)
         } else {
             self.path.bounds()
@@ -56,6 +68,24 @@ pub struct RawAxis {
 }
 
 impl RawAxis {
+    fn new(id: u8, invert: bool, g: &gilrs_core::Gamepad) -> Self {
+        let id_index = id;
+        let id = g.axes()[id_index as usize];
+        let info = g.axis_info(id).unwrap();
+        let id = id.into_u32();
+        let deadzone = info.deadzone;
+        let current = (info.min + info.max) / 2;
+        let range = (info.min, info.max);
+        RawAxis {
+            id,
+            id_index,
+            deadzone,
+            invert,
+            current,
+            range,
+        }
+    }
+
     fn update_id(&mut self, g: &gilrs_core::Gamepad) {
         let id = g.axes()[self.id_index as usize];
         let info = g.axis_info(id).unwrap();
@@ -63,6 +93,24 @@ impl RawAxis {
         self.deadzone = info.deadzone;
         self.range = (info.min, info.max);
         self.current = (info.min + info.max) / 2;
+    }
+
+    fn normalized(&self) -> f32 {
+        fn remap(from: (f32, f32), to: (f32, f32), s: f32) -> f32 {
+            to.0 + (s - from.0) * (to.1 - to.0) / (from.1 - from.0)
+        }
+        remap(
+            (self.range.0 as f32, self.range.1 as f32),
+            (-1.0, 1.0),
+            self.current as f32,
+        ) * if self.invert { -1.0 } else { 1.0 }
+    }
+
+    fn active(&self) -> bool {
+        let midpoint = (self.range.0 + self.range.1) / 2;
+        self.deadzone.map_or(true, |n| {
+            self.current > midpoint + n as i32 || self.current < midpoint - n as i32
+        })
     }
 }
 
@@ -72,14 +120,14 @@ pub struct Stick {
     pub y: RawAxis,
     pub path: Path,
     pub displacement: f32,
-    pub fill: (Color, Color),
-    pub outline: Option<(Color, Color, f32)>,
-    pub gate: Option<(Path, Color, f32)>,
+    pub fill: ColorPair,
+    pub outline: Option<(ColorPair, f32)>,
+    pub gate: Option<(Path, ColorPair, f32)>,
 }
 
 impl Stick {
     pub fn bounds(&self) -> Rect {
-        let bounds = if let Some((_, _, width)) = self.outline {
+        let bounds = if let Some((_, width)) = self.outline {
             expand(self.path.bounds(), width)
         } else {
             self.path.bounds()
@@ -92,7 +140,7 @@ impl Stick {
     }
 }
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, PartialEq)]
 pub enum FillDir {
     TopToBottom,
     LeftToRight,
@@ -105,7 +153,7 @@ pub struct Axis {
     pub axis: RawAxis,
     pub path: Rect,
     pub direction: FillDir,
-    pub fill: (Color, Color),
+    pub fill: ColorPair,
     pub outline: (Color, f32),
 }
 
@@ -124,7 +172,7 @@ pub struct Dpad {
     pub down: Path,
     pub left: Path,
     pub right: Path,
-    pub fill: (Color, Color),
+    pub fill: ColorPair,
     pub outline: Option<(Path, Color, f32)>,
 }
 
@@ -177,23 +225,15 @@ impl Gamepad {
                 id_index: 0,
                 pressed: false,
                 path: c,
-                fill: (active, inactive),
+                fill: ColorPair { active, inactive },
                 outline: None,
                 // outline: Some((inactive, inactive, 2.0)),
             });
         }
 
-        for (i, axis) in gamepad.axes().into_iter().enumerate() {
-            let info = gamepad.axis_info(*axis).unwrap();
+        for i in 0..gamepad.axes().len() {
             self.axes.push(Axis {
-                axis: RawAxis {
-                    id: axis.into_u32(),
-                    id_index: 0,
-                    deadzone: info.deadzone,
-                    invert: false,
-                    current: (info.min + info.max) / 2,
-                    range: (info.min, info.max),
-                },
+                axis: RawAxis::new(i as u8, false, &gamepad),
                 path: Rect::from_xywh(
                     radius * 2.0 + 10.0,
                     i as f32 * spacing,
@@ -202,16 +242,159 @@ impl Gamepad {
                 )
                 .unwrap(),
                 direction: FillDir::LeftToRight,
-                fill: (Color::from_rgba8(20, 105, 200, 150), Color::BLACK),
+                fill: ColorPair {
+                    active: Color::from_rgba8(20, 105, 200, 150),
+                    inactive: Color::BLACK,
+                },
                 outline: (Color::from_rgba8(20, 20, 20, 150), 2.0),
             });
         }
     }
 
-    pub fn load_config(&mut self, gilrs: &mut Gilrs, g: &config::Gamepad) {
+    pub fn load_config(&mut self, gilrs: &mut Gilrs, config: &config::Gamepad) {
         self.clear();
-        self.add_debug_inputs(gilrs);
-        // TODO:
+        let gamepad = gilrs.gamepad(self.id).unwrap();
+        let buttons = gamepad.buttons();
+        let global_outline = config.weight.is_some() || config.outline.is_some();
+        for b in &config.buttons {
+            use config::ButtonShape::*;
+            let (x, y) = b.pos;
+            self.buttons.push(Button {
+                id: buttons[b.id as usize].into_u32(),
+                id_index: b.id,
+                pressed: false,
+                path: match b.shape.unwrap_or(config.button_shape) {
+                    Circle { radius } => PathBuilder::from_circle(x, y, radius).unwrap(),
+                    RoundedRect {
+                        width,
+                        height,
+                        radius,
+                    } => config::rounded_rect(x, y, width, height, radius),
+                },
+                fill: ColorPair {
+                    inactive: b.fill.unwrap_or(config.inactive).into(),
+                    active: b.fill_active.unwrap_or(config.active).into(),
+                },
+                outline: (global_outline
+                    || b.weight.is_some()
+                    || b.outline.is_some()
+                    || b.outline_active.is_some())
+                .then(|| {
+                    (
+                        ColorPair {
+                            active: b
+                                .outline_active
+                                .or(b.outline)
+                                .or(config.outline)
+                                .unwrap_or_default()
+                                .into(),
+                            inactive: b
+                                .outline
+                                .or(config.outline)
+                                .unwrap_or_default()
+                                .into(),
+                        },
+                        b.weight.or(config.weight).unwrap_or(2.0),
+                    )
+                }),
+            })
+        }
+
+        for s in &config.sticks {
+            let (x, y) = s.pos;
+            let r = s.radius.unwrap_or(config.stick_radius);
+            self.sticks.push(Stick {
+                x: RawAxis::new(s.x_axis, s.invert_x, &gamepad),
+                y: RawAxis::new(s.y_axis, s.invert_y, &gamepad),
+                path: PathBuilder::from_circle(x, y, r).unwrap(),
+                displacement: s.displacement.unwrap_or(r * 3.0 / 4.0),
+                fill: ColorPair {
+                    inactive: s.fill.unwrap_or(config.inactive).into(),
+                    active: s.fill_active.unwrap_or(config.active).into(),
+                },
+                outline: (global_outline
+                    || s.outline_weight.is_some()
+                    || s.outline.is_some()
+                    || s.outline_active.is_some())
+                .then(|| {
+                    (
+                        ColorPair {
+                            active: s
+                                .outline_active
+                                .or(s.outline)
+                                .or(config.outline)
+                                .unwrap_or_default()
+                                .into(),
+                            inactive: s
+                                .outline
+                                .or(config.outline)
+                                .unwrap_or_default()
+                                .into(),
+                        },
+                        s.outline_weight.or(config.weight).unwrap_or(2.0),
+                    )
+                }),
+                gate: (s.gate_radius.is_some()
+                    || s.gate_weight.is_some()
+                    || s.gate.is_some()
+                    || s.gate_active.is_some())
+                .then(|| {
+                    (
+                        PathBuilder::from_circle(
+                            x,
+                            y,
+                            s.gate_radius.or(config.gate_radius).unwrap_or(r * 1.5),
+                        )
+                        .unwrap(),
+                        ColorPair {
+                            active: s
+                                .gate_active
+                                .or(s.gate)
+                                .or(config.outline)
+                                .unwrap_or_default()
+                                .into(),
+                            inactive: s
+                                .gate
+                                .or(config.outline)
+                                .unwrap_or_default()
+                                .into(),
+                        },
+                        s.gate_weight
+                            .or(s.outline_weight)
+                            .or(config.weight)
+                            .unwrap_or(3.0),
+                    )
+                }),
+            });
+        }
+
+        // for a in &config.axes {
+        //     // TODO:
+        // }
+
+        self.minimize()
+    }
+
+    // TODO: custom gamecube config with octagonal gate and x/y/z paths
+
+    pub fn minimize(&mut self) {
+        let bounds = self.bounds();
+        let t = Transform::from_translate(-bounds.left(), -bounds.top());
+        for b in &mut self.buttons {
+            b.path = b.path.clone().transform(t).unwrap()
+        }
+        for s in &mut self.sticks {
+            s.path = s.path.clone().transform(t).unwrap()
+        }
+        for a in &mut self.axes {
+            a.path = Rect::from_xywh(
+                a.path.x() - bounds.left(),
+                a.path.y() - bounds.top(),
+                a.path.width(),
+                a.path.height(),
+            )
+            .unwrap()
+        }
     }
 
     pub fn switch_gamepad(&mut self, gilrs: &mut Gilrs, id: usize) {
@@ -238,11 +421,9 @@ impl Gamepad {
             match ev.event {
                 ButtonPressed(code) => self.set_button(code.into_u32(), true),
                 ButtonReleased(code) => self.set_button(code.into_u32(), false),
-                AxisValueChanged(val, code) => {
-                    self.set_axis(code.into_u32(), val);
-                }
+                AxisValueChanged(val, code) => self.set_axis(code.into_u32(), val),
                 Connected | Disconnected => {
-                    // todo!()
+                    // TODO:
                 }
             }
         }
@@ -251,83 +432,77 @@ impl Gamepad {
     pub fn render(&self, img: &mut Pixmap) {
         let mut stroke = Stroke::default();
         let mut paint = Paint::default();
-        paint.anti_alias = false;
-        // img.fill(Color::from_rgba8(50, 50, 50, 127));
+        let f = FillRule::default();
+        let t = Transform::default();
+        paint.anti_alias = true;
+        img.fill(Color::TRANSPARENT);
 
         for button in &self.buttons {
-            let fill = if button.pressed {
-                button.fill.0
-            } else {
-                button.fill.1
-            };
-            paint.set_color(fill);
-            img.fill_path(
-                &button.path,
-                &paint,
-                FillRule::default(),
-                Transform::default(),
-                None,
-            );
-            if let Some((active, inactive, weight)) = button.outline {
-                paint.set_color(if button.pressed { active } else { inactive });
-                stroke.width = weight;
-                img.stroke_path(
-                    &button.path,
-                    &paint,
-                    &stroke,
-                    Transform::default(),
-                    None,
-                );
+            paint.set_color(button.fill.get(button.pressed));
+            img.fill_path(&button.path, &paint, f, t, None);
+
+            if let Some((colors, weight)) = &button.outline {
+                paint.set_color(colors.get(button.pressed));
+                stroke.width = *weight;
+                img.stroke_path(&button.path, &paint, &stroke, t, None);
             }
         }
 
         for axis in &self.axes {
+            // background
             let path = PathBuilder::from_rect(axis.path);
-            paint.set_color(axis.fill.1);
-            img.fill_path(
-                &path,
-                &paint,
-                FillRule::default(),
-                Transform::default(),
-                None,
-            );
-            let (low, high) = axis.axis.range;
-            let active_path = match axis.direction {
-                FillDir::TopToBottom => todo!(),
-                FillDir::LeftToRight => {
-                    let partial = remap(
-                        (low as f32, high as f32),
-                        (0.0, axis.path.width()),
-                        axis.axis.current as f32,
-                    );
-                    PathBuilder::from_rect(
-                        Rect::from_xywh(
-                            axis.path.x(),
-                            axis.path.y(),
-                            partial,
-                            axis.path.height(),
-                        )
-                        .unwrap(),
-                    )
-                }
-                FillDir::BottomToTop => todo!(),
-                FillDir::RightToLeft => todo!(),
-            };
-            paint.set_color(axis.fill.0);
-            img.fill_path(
-                &active_path,
-                &paint,
-                FillRule::default(),
-                Transform::default(),
-                None,
-            );
+            paint.set_color(axis.fill.inactive);
+            img.fill_path(&path, &paint, f, t, None);
 
+            // active partial fill
+            let mut percent = (axis.axis.normalized() + 1.0) / 2.0;
+            use FillDir::*;
+            let mut left = axis.path.left();
+            let mut top = axis.path.top();
+            let mut right = axis.path.right();
+            let mut bottom = axis.path.bottom();
+            match axis.direction {
+                TopToBottom => bottom -= axis.path.height() * percent,
+                LeftToRight => right -= axis.path.width() * percent,
+                BottomToTop => top += axis.path.height() * (1.0 - percent),
+                RightToLeft => left += axis.path.width() * (1.0 - percent),
+            };
+            let active_path = PathBuilder::from_rect(
+                Rect::from_ltrb(left, top, right, bottom).unwrap(),
+            );
+            paint.set_color(axis.fill.active);
+            img.fill_path(&active_path, &paint, f, t, None);
+
+            // border
             let (color, weight) = axis.outline;
             stroke.width = weight;
             paint.set_color(color);
-            img.stroke_path(&path, &paint, &stroke, Transform::default(), None);
+            img.stroke_path(&path, &paint, &stroke, t, None);
         }
-        for stick in &self.sticks {}
+
+        for stick in &self.sticks {
+            let x = stick.x.normalized();
+            let y = stick.y.normalized();
+            let cx = stick.displacement * x * (1.0 - y * y / 2.0).sqrt();
+            let cy = stick.displacement * y * (1.0 - x * x / 2.0).sqrt();
+            let is_active = stick.x.active() || stick.y.active();
+
+            if let Some((path, color, weight)) = &stick.gate {
+                paint.set_color(color.get(is_active));
+                stroke.width = *weight;
+                img.stroke_path(path, &paint, &stroke, t, None);
+            }
+
+            let trans = Transform::from_translate(cx, cy);
+            paint.set_color(stick.fill.get(is_active));
+            img.fill_path(&stick.path, &paint, f, trans, None);
+
+            if let Some((colors, weight)) = &stick.outline {
+                paint.set_color(colors.get(is_active));
+                stroke.width = *weight;
+                img.stroke_path(&stick.path, &paint, &stroke, trans, None);
+            }
+        }
     }
 
     fn set_button(&mut self, id: u32, state: bool) {
@@ -343,45 +518,25 @@ impl Gamepad {
         for axis in &mut self.axes {
             if axis.axis.id == id {
                 axis.axis.current = state;
-                return;
             }
         }
-    }
-
-    fn set_stick_axis(&mut self, id: u32, state: i32) {
         for stick in &mut self.sticks {
             if stick.x.id == id {
                 stick.x.current = state;
-                return;
             }
             if stick.y.id == id {
                 stick.y.current = state;
-                return;
             }
         }
     }
 
     pub fn bounds(&self) -> Rect {
-        let smallest = Rect::from_ltrb(0.0, 0.0, 1.0, 1.0).unwrap();
-        [
-            self.buttons
-                .iter()
-                .map(Button::bounds)
-                .reduce(|a, b| combine(a, b))
-                .unwrap_or(smallest),
-            self.sticks
-                .iter()
-                .map(Stick::bounds)
-                .reduce(|a, b| combine(a, b))
-                .unwrap_or(smallest),
-            self.axes
-                .iter()
-                .map(Axis::bounds)
-                .reduce(|a, b| combine(a, b))
-                .unwrap_or(smallest),
-        ]
-        .into_iter()
-        .reduce(|a, b| combine(a, b))
-        .unwrap()
+        self.buttons
+            .iter()
+            .map(Button::bounds)
+            .chain(self.sticks.iter().map(Stick::bounds))
+            .chain(self.axes.iter().map(Axis::bounds))
+            .reduce(|a, b| combine(a, b))
+            .unwrap_or(Rect::from_ltrb(0.0, 0.0, 100.0, 100.0).unwrap())
     }
 }
