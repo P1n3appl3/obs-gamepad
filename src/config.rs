@@ -45,11 +45,11 @@ fn rounded_rect(x: f32, y: f32, width: f32, height: f32, radius: f32) -> Path {
 }
 
 #[derive(Clone, Copy, Debug)]
-struct Color {
-    r: u8,
-    g: u8,
-    b: u8,
-    a: u8,
+pub struct Color {
+    pub r: u8,
+    pub g: u8,
+    pub b: u8,
+    pub a: u8,
 }
 
 impl Color {
@@ -138,7 +138,7 @@ impl<'de> Deserialize<'de> for Color {
 }
 
 #[derive(Clone, Copy, Debug, Deserialize)]
-enum ButtonShape {
+pub enum ButtonShape {
     Circle(f32),
     RoundedRect {
         width: f32,
@@ -148,34 +148,34 @@ enum ButtonShape {
 }
 
 #[derive(Clone, Debug, Deserialize)]
-struct Button {
-    id: u8,
-    pos: (f32, f32),
-    shape: Option<ButtonShape>,
-    fill: Option<Color>,
-    fill_active: Option<Color>,
-    outline: Option<Color>,
-    outline_active: Option<Color>,
+pub struct Button {
+    pub id: u8,
+    pub pos: (f32, f32),
+    pub shape: Option<ButtonShape>,
+    pub fill: Option<Color>,
+    pub fill_active: Option<Color>,
+    pub outline: Option<Color>,
+    pub outline_active: Option<Color>,
 }
 
 #[derive(Clone, Debug, Deserialize)]
-struct Stick {
-    pos: (f32, f32),
-    x_axis: u8,
-    y_axis: u8,
-    invert_x: Option<bool>,
-    invert_y: Option<bool>,
-    radius: Option<f32>,
-    gate_radius: Option<f32>,
-    displacement: Option<f32>,
-    fill: Option<Color>,
-    fill_active: Option<Color>,
-    outline_weight: Option<f32>,
-    outline: Option<Color>,
-    outline_active: Option<Color>,
-    gate_weight: Option<f32>,
-    gate: Option<Color>,
-    gate_active: Option<Color>,
+pub struct Stick {
+    pub pos: (f32, f32),
+    pub x_axis: u8,
+    pub y_axis: u8,
+    pub invert_x: Option<bool>,
+    pub invert_y: Option<bool>,
+    pub radius: Option<f32>,
+    pub gate_radius: Option<f32>,
+    pub displacement: Option<f32>,
+    pub fill: Option<Color>,
+    pub fill_active: Option<Color>,
+    pub outline_weight: Option<f32>,
+    pub outline: Option<Color>,
+    pub outline_active: Option<Color>,
+    pub gate_weight: Option<f32>,
+    pub gate: Option<Color>,
+    pub gate_active: Option<Color>,
 }
 
 fn default_fill() -> Color {
@@ -186,23 +186,22 @@ fn default_active() -> Color {
     Color::new(34, 59, 224, 200)
 }
 
-#[derive(Clone, Debug, Deserialize)]
-struct Gamepad {
-    #[serde(default = "default_fill")]
-    active: Color,
-    #[serde(default = "default_active")]
-    inactive: Color,
-    #[serde(default)]
-    outline: Option<Color>,
-    button_shape: ButtonShape,
-    buttons: Vec<Button>,
-    sticks: Vec<Stick>,
+fn default_shape() -> ButtonShape {
+    ButtonShape::Circle(30.0)
 }
 
-impl From<Gamepad> for gamepad::Gamepad {
-    fn from(g: Gamepad) -> Self {
-        Self {
-            ..Default::default()
-        }
-    }
+#[derive(Clone, Debug, Deserialize)]
+pub struct Gamepad {
+    #[serde(default = "default_fill")]
+    pub active: Color,
+    #[serde(default = "default_active")]
+    pub inactive: Color,
+    #[serde(default)]
+    pub outline: Option<Color>,
+    #[serde(default = "default_shape")]
+    pub button_shape: ButtonShape,
+    #[serde(default)]
+    pub buttons: Vec<Button>,
+    #[serde(default)]
+    pub sticks: Vec<Stick>,
 }

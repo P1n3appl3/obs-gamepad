@@ -1,5 +1,6 @@
 use std::io::{self, Write};
 
+use crate::config;
 use gilrs_core::Gilrs;
 use std::collections::BTreeMap;
 use tiny_skia::{
@@ -54,6 +55,17 @@ pub struct RawAxis {
     pub range: (i32, i32),
 }
 
+impl RawAxis {
+    fn update_id(&mut self, g: &gilrs_core::Gamepad) {
+        let id = g.axes()[self.id_index as usize];
+        let info = g.axis_info(id).unwrap();
+        self.id = id.into_u32();
+        self.deadzone = info.deadzone;
+        self.range = (info.min, info.max);
+        self.current = (info.min + info.max) / 2;
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct Stick {
     pub x: RawAxis,
@@ -103,6 +115,7 @@ impl Axis {
     }
 }
 
+#[allow(unused)]
 #[derive(Clone, Debug)]
 pub struct Dpad {
     pub x: RawAxis,
@@ -142,7 +155,14 @@ impl Gamepad {
         }
     }
 
+    pub fn clear(&mut self) {
+        self.buttons.clear();
+        self.sticks.clear();
+        self.axes.clear();
+    }
+
     pub fn add_debug_inputs(&mut self, gilrs: &mut Gilrs) {
+        self.clear();
         let spacing = 35.0;
         let radius = 15.0;
 
@@ -188,6 +208,27 @@ impl Gamepad {
         }
     }
 
+    pub fn load_config(&mut self, gilrs: &mut Gilrs, g: &config::Gamepad) {
+        self.clear();
+        self.add_debug_inputs(gilrs);
+        // TODO:
+    }
+
+    pub fn switch_gamepad(&mut self, gilrs: &mut Gilrs, id: usize) {
+        let gamepad = gilrs.gamepad(id).unwrap();
+        let buttons = gamepad.buttons();
+        for b in &mut self.buttons {
+            b.id = buttons[b.id_index as usize].into_u32();
+        }
+        for s in &mut self.sticks {
+            s.x.update_id(&gamepad);
+            s.y.update_id(&gamepad);
+        }
+        for a in &mut self.axes {
+            a.axis.update_id(&gamepad);
+        }
+    }
+
     pub fn update(&mut self, gilrs: &mut Gilrs) {
         while let Some(ev) = gilrs.next_event() {
             if ev.id != self.id {
@@ -211,7 +252,6 @@ impl Gamepad {
         let mut stroke = Stroke::default();
         let mut paint = Paint::default();
         paint.anti_alias = false;
-
         // img.fill(Color::from_rgba8(50, 50, 50, 127));
 
         for button in &self.buttons {
@@ -288,7 +328,6 @@ impl Gamepad {
             img.stroke_path(&path, &paint, &stroke, Transform::default(), None);
         }
         for stick in &self.sticks {}
-        // for dpad in &self.dpads {}
     }
 
     fn set_button(&mut self, id: u32, state: bool) {
