@@ -1,10 +1,13 @@
 use std::{f32::consts::SQRT_2, fmt};
 
+use gilrs_core;
 use serde::{
     de::{self, Unexpected, Visitor},
     Deserialize, Deserializer,
 };
-use tiny_skia::{self, Path, PathBuilder};
+use tiny_skia::{self, Path, PathBuilder, Rect};
+
+use crate::gamepad::{self, ColorPair};
 
 #[rustfmt::skip]
 pub fn rounded_rect(x: f32, y: f32, width: f32, height: f32, radius: f32) -> Path {
@@ -142,7 +145,7 @@ impl<'de> Deserialize<'de> for Color {
 }
 
 #[derive(Clone, Copy, Debug, Deserialize)]
-#[serde(tag = "type", rename_all = "snake_case")]
+#[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
 pub enum ButtonShape {
     Circle {
         radius: f32,
@@ -156,23 +159,68 @@ pub enum ButtonShape {
 
 impl Default for ButtonShape {
     fn default() -> Self {
-        Self::Circle { radius: 40.0 }
+        Self::Circle { radius: 25.0 }
     }
 }
 
 #[derive(Clone, Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Button {
     pub id: u8,
     pub pos: (f32, f32),
     pub shape: Option<ButtonShape>,
     pub fill: Option<Color>,
     pub fill_active: Option<Color>,
-    pub weight: Option<f32>,
+    pub outline_weight: Option<f32>,
     pub outline: Option<Color>,
     pub outline_active: Option<Color>,
 }
 
+impl Button {
+    pub fn load(
+        &self,
+        gamepad: &gilrs_core::Gamepad,
+        config: &Gamepad,
+    ) -> gamepad::Button {
+        let buttons = gamepad.buttons();
+        let (x, y) = self.pos;
+        let outline_active = self
+            .outline_active
+            .or(self.outline)
+            .or(config.outline)
+            .unwrap_or_default()
+            .into();
+        let outline_inactive = self.outline.or(config.outline).unwrap_or_default().into();
+        let weight = self.outline_weight.or(config.outline_weight).unwrap_or(2.0);
+
+        use ButtonShape::*;
+        gamepad::Button {
+            id: buttons[self.id as usize].into_u32(),
+            id_index: self.id,
+            pressed: false,
+            path: match self.shape.unwrap_or(config.button_shape) {
+                Circle { radius } => PathBuilder::from_circle(x, y, radius).unwrap(),
+                RoundedRect {
+                    width,
+                    height,
+                    radius,
+                } => rounded_rect(x, y, width, height, radius),
+            },
+            fill: ColorPair {
+                inactive: self.fill.unwrap_or(config.inactive).into(),
+                active: self.fill_active.unwrap_or(config.active).into(),
+            },
+            outline: (config.default_outline()
+                || self.outline_weight.is_some()
+                || self.outline.is_some()
+                || self.outline_active.is_some())
+            .then(|| (ColorPair::new(outline_active, outline_inactive), weight)),
+        }
+    }
+}
+
 #[derive(Clone, Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Stick {
     pub pos: (f32, f32),
     pub x_axis: u8,
@@ -189,9 +237,135 @@ pub struct Stick {
     pub outline: Option<Color>,
     pub outline_active: Option<Color>,
     pub gate_radius: Option<f32>,
+    pub gate_weight: Option<f32>,
     pub gate: Option<Color>,
     pub gate_active: Option<Color>,
-    pub gate_weight: Option<f32>,
+}
+
+impl Stick {
+    pub fn load(
+        &self,
+        gamepad: &gilrs_core::Gamepad,
+        config: &Gamepad,
+    ) -> gamepad::Stick {
+        let (x, y) = self.pos;
+        let r = self.radius.unwrap_or(config.stick_radius);
+        let outline_active = self
+            .outline_active
+            .or(self.outline)
+            .or(config.outline)
+            .unwrap_or_default()
+            .into();
+        let outline_inactive = self.outline.or(config.outline).unwrap_or_default().into();
+        let outline_weight = self.outline_weight.or(config.outline_weight).unwrap_or(2.0);
+        let gate_path = PathBuilder::from_circle(
+            x,
+            y,
+            self.gate_radius.or(config.gate_radius).unwrap_or(r * 1.5),
+        )
+        .unwrap();
+        let gate_active = self
+            .gate_active
+            .or(self.gate)
+            .or(config.outline)
+            .unwrap_or_default()
+            .into();
+        let gate_inactive = self.gate.or(config.outline).unwrap_or_default().into();
+        let gate_weight = self
+            .gate_weight
+            .or(self.outline_weight)
+            .or(config.outline_weight)
+            .unwrap_or(4.0);
+
+        gamepad::Stick {
+            x: gamepad::RawAxis::new(self.x_axis, self.invert_x, &gamepad),
+            y: gamepad::RawAxis::new(self.y_axis, self.invert_y, &gamepad),
+            path: PathBuilder::from_circle(x, y, r).unwrap(),
+            displacement: self.displacement.unwrap_or(r * 3.0 / 4.0),
+            fill: ColorPair {
+                inactive: self.fill.unwrap_or(config.inactive).into(),
+                active: self.fill_active.unwrap_or(config.active).into(),
+            },
+            outline: (config.default_outline()
+                || self.outline_weight.is_some()
+                || self.outline.is_some()
+                || self.outline_active.is_some())
+            .then(|| {
+                (
+                    ColorPair::new(outline_active, outline_inactive),
+                    outline_weight,
+                )
+            }),
+            gate: (self.gate_radius.is_some()
+                || self.gate_weight.is_some()
+                || self.gate.is_some()
+                || self.gate_active.is_some())
+            .then(|| {
+                (
+                    gate_path,
+                    ColorPair::new(gate_active, gate_inactive),
+                    gate_weight,
+                )
+            }),
+        }
+    }
+}
+
+#[derive(Copy, Clone, Debug, PartialEq, Deserialize)]
+#[serde(rename_all = "snake_case", deny_unknown_fields)]
+pub enum FillDir {
+    TopToBottom,
+    LeftToRight,
+    BottomToTop,
+    RightToLeft,
+}
+
+impl Default for FillDir {
+    fn default() -> Self {
+        Self::LeftToRight
+    }
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Axis {
+    pub pos: (f32, f32),
+    pub id: u8,
+    #[serde(default)]
+    pub invert: bool,
+    pub size: Option<(f32, f32)>,
+    pub fill_dir: Option<FillDir>,
+    pub fill: Option<Color>,
+    pub fill_active: Option<Color>,
+    pub outline_weight: Option<f32>,
+    pub outline: Option<Color>,
+}
+
+impl Axis {
+    pub fn load(&self, gamepad: &gilrs_core::Gamepad, config: &Gamepad) -> gamepad::Axis {
+        let size = self.size.unwrap_or(config.axis_size);
+        let outline_weight = self.outline_weight.or(config.outline_weight).unwrap_or(2.0);
+        gamepad::Axis {
+            axis: gamepad::RawAxis::new(self.id, self.invert, &gamepad),
+            path: Rect::from_xywh(self.pos.0, self.pos.1, size.0, size.1).unwrap(),
+            direction: self.fill_dir.unwrap_or(config.fill_dir),
+            fill: ColorPair {
+                inactive: self.fill.unwrap_or(config.inactive).into(),
+                active: self.fill_active.unwrap_or(config.active).into(),
+            },
+            outline: (config.default_outline()
+                || self.outline.is_some()
+                || self.outline_weight.is_some())
+            .then(|| {
+                (
+                    self.outline
+                        .unwrap_or(config.outline.unwrap_or_default())
+                        .into(),
+                    outline_weight,
+                )
+            }),
+        }
+    }
 }
 
 const fn default_fill() -> Color {
@@ -206,7 +380,12 @@ const fn default_stick() -> f32 {
     40.0
 }
 
+const fn default_axis() -> (f32, f32) {
+    (120.0, 20.0)
+}
+
 #[derive(Clone, Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Gamepad {
     #[serde(default = "default_active")]
     pub active: Color,
@@ -215,15 +394,27 @@ pub struct Gamepad {
     #[serde(default)]
     pub outline: Option<Color>,
     #[serde(default)]
-    pub weight: Option<f32>,
+    pub outline_weight: Option<f32>,
     #[serde(default)]
     pub button_shape: ButtonShape,
     #[serde(default = "default_stick")]
     pub stick_radius: f32,
     #[serde(default)]
     pub gate_radius: Option<f32>,
+    #[serde(default = "default_axis")]
+    pub axis_size: (f32, f32),
+    #[serde(default)]
+    pub fill_dir: FillDir,
     #[serde(default, rename = "button")]
     pub buttons: Vec<Button>,
     #[serde(default, rename = "stick")]
     pub sticks: Vec<Stick>,
+    #[serde(default, rename = "axis")]
+    pub axes: Vec<Axis>,
+}
+
+impl Gamepad {
+    pub fn default_outline(&self) -> bool {
+        self.outline_weight.is_some() || self.outline.is_some()
+    }
 }

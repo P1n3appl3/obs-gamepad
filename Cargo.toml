@@ -16,3 +16,7 @@ minifb = "0.19.3"
 serde = { version = "1.0", features = ["derive"] }
 toml = "0.5.8"
 notify = "4.0.17"
+
+[profile.release]
+lto = true
+panic = "abort"
