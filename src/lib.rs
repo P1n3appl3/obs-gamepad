@@ -1,11 +1,23 @@
-mod gamepad;
 mod config;
+mod gamepad;
 
-use log::{error, info, warn};
+use std::{
+    borrow::Cow,
+    fs,
+    path::PathBuf,
+    sync::mpsc::{self, Receiver},
+    time::Duration,
+};
+
+use gilrs_core::{self, Gilrs};
+use log::info;
+use notify::{self, DebouncedEvent, RecommendedWatcher, RecursiveMode, Watcher};
 use obs_wrapper::{
     graphics::*, log::Logger, obs_register_module, obs_string, prelude::*, source::*,
 };
-use tiny_skia::{Color, FillRule, Paint, PathBuilder, Pixmap, Transform};
+use tiny_skia::Pixmap;
+
+use gamepad::Gamepad;
 
 obs_register_module!(GamepadModule);
 struct GamepadModule {
@@ -14,12 +26,47 @@ struct GamepadModule {
 
 struct Source;
 
-struct State {
-    pub img: Pixmap,
-    pub texture: GraphicsTexture,
+pub struct Image {
+    pub mine: Pixmap,
+    pub obs: GraphicsTexture,
     pub width: u32,
     pub height: u32,
-    pub color: Color,
+}
+
+impl From<&Gamepad> for Image {
+    fn from(gamepad: &Gamepad) -> Self {
+        let (width, height) = if gamepad.is_empty() {
+            (100, 100)
+        } else {
+            let bounds = gamepad.bounds();
+            (bounds.right() as u32, bounds.bottom() as u32)
+        };
+        Self {
+            mine: Pixmap::new(width, height).unwrap(),
+            obs: GraphicsTexture::new(width, height, GraphicsColorFormat::RGBA),
+            width,
+            height,
+        }
+    }
+}
+
+pub struct ConfigWatcher {
+    pub watcher: RecommendedWatcher,
+    pub receiver: Receiver<DebouncedEvent>,
+    pub path: Option<PathBuf>,
+}
+
+struct State {
+    pub image: Image,
+    pub gilrs: Gilrs,
+    pub gamepad: Gamepad,
+    pub watcher: ConfigWatcher,
+}
+
+impl Drop for State {
+    fn drop(&mut self) {
+        info!("state destroyed")
+    }
 }
 
 impl Sourceable for Source {
@@ -32,52 +79,83 @@ impl Sourceable for Source {
     }
 }
 
-const SETTING_WIDTH: ObsString = obs_string!("width");
-const SETTING_HEIGHT: ObsString = obs_string!("height");
 const SETTING_GAMEPAD: ObsString = obs_string!("gamepad");
-const SETTING_FILE: ObsString = obs_string!("data file");
+const SETTING_FILE: ObsString = obs_string!("settings");
 
 impl CreatableSource<State> for Source {
     fn create(ctx: &mut CreatableSourceContext<State>, _source: SourceContext) -> State {
-        // let settings = &ctx.settings;
         ctx.register_hotkey(
             obs_string!("next gamepad"),
             obs_string!("switch to a different gamepad"),
-            |key: &mut hotkey::Hotkey, state: &mut Option<State>| {
-                if let Some(state) = state {
+            |key, state| {
+                if let Some(_state) = state {
                     if key.pressed {
-                        state.color = Color::from_rgba8(127, 150, 50, 200);
-                    } else {
-                        state.color = Color::from_rgba8(150, 50, 127, 200);
+                        // TODO:
                     }
                 }
-                info!("Pressed button: {} {}", key.pressed, key.id());
+                info!(
+                    "{} button: {}",
+                    if key.pressed { "pressed" } else { "released" },
+                    key.id()
+                );
             },
         );
-        // TODO: settings width/height
-        let width = 500; // source.get_base_width
-        let height = 500;
-        let color = Color::from_rgba8(50, 127, 150, 200);
+        let settings = &ctx.settings;
+        let mut gamepad = Gamepad {
+            id: settings.get(SETTING_GAMEPAD).unwrap_or_default(),
+            ..Default::default()
+        };
+        let (tx, rx) = mpsc::channel();
+        let mut watcher = ConfigWatcher {
+            watcher: RecommendedWatcher::new(tx, Duration::from_millis(100)).unwrap(),
+            receiver: rx,
+            path: None,
+        };
+        let mut gilrs = Gilrs::new().unwrap();
+        if let Some(path) = settings.get::<Cow<str>, _>(SETTING_FILE) {
+            let path = PathBuf::from(path.as_ref());
+            let data = &toml::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
+            gamepad.load_config(&mut gilrs, &data);
+            watcher
+                .watcher
+                .watch(path.parent().unwrap(), RecursiveMode::Recursive)
+                .unwrap();
+            watcher.path = Some(path);
+        }
         info!("Created gamepad source");
         State {
-            img: Pixmap::new(width, height).unwrap(),
-            texture: GraphicsTexture::new(width, height, GraphicsColorFormat::RGBA),
-            width,
-            height,
-            color,
+            image: (&gamepad).into(),
+            gilrs,
+            gamepad,
+            watcher,
         }
     }
 }
 
 impl GetPropertiesSource<State> for Source {
     fn get_properties(state: &mut Option<State>, properties: &mut Properties) {
-        todo!()
+        info!("loading props");
+        if let Some(state) = state {
+            let max_gamepads = state.gilrs.last_gamepad_hint();
+            properties.add(
+                SETTING_GAMEPAD,
+                obs_string!("Gamepad ID"),
+                NumberProp::new_int().with_range(0..max_gamepads),
+            );
+            properties.add(
+                SETTING_FILE,
+                obs_string!("Layout File"),
+                PathProp::new(PathType::File),
+            );
+        }
     }
 }
 
+// TODO: https://github.com/bennetthardwick/rust-obs-plugins/pull/15
 impl GetDefaultsSource<State> for Source {
     fn get_defaults(_settings: &mut DataObj) {
-        todo!("need to add obs_data_set_default_type")
+        // TODO: last active gamepad, and xbox default file
+        unimplemented!()
     }
 }
 
@@ -87,7 +165,8 @@ impl UpdateSource<State> for Source {
         _settings: &mut DataObj,
         _context: &mut GlobalContext,
     ) {
-        todo!("settings update")
+        info!("settings update");
+        // todo!("settings update")
     }
 }
 
@@ -99,13 +178,13 @@ impl GetNameSource<State> for Source {
 
 impl GetWidthSource<State> for Source {
     fn get_width(state: &mut Option<State>) -> u32 {
-        state.as_ref().map(|s| s.img.width()).unwrap()
+        state.as_ref().map(|s| s.image.width).unwrap()
     }
 }
 
 impl GetHeightSource<State> for Source {
     fn get_height(state: &mut Option<State>) -> u32 {
-        state.as_ref().map(|s| s.img.height()).unwrap()
+        state.as_ref().map(|s| s.image.height).unwrap()
     }
 }
 
@@ -115,25 +194,21 @@ impl VideoRenderSource<State> for Source {
         _ctx: &mut GlobalContext,
         _vid_ctx: &mut VideoRenderContext,
     ) {
-        if let Some(state) = state {
-            state.img.fill(Color::from_rgba8(255, 0, 255, 64));
-
-            let mut paint = Paint::default();
-            paint.set_color(state.color);
-            state.img.fill_path(
-                &PathBuilder::from_circle(250.0, 250.0, 32.0).unwrap(),
-                &paint,
-                FillRule::default(),
-                Transform::default(),
-                None,
-            );
-
-            state.texture.set_image(
-                state.img.data(),
-                state.width * 4, // line size in bytes
+        if let Some(State {
+            image,
+            gamepad,
+            gilrs,
+            ..
+        }) = state
+        {
+            gamepad.update(gilrs);
+            gamepad.render(&mut image.mine);
+            image.obs.set_image(
+                image.mine.data(),
+                image.width * 4, // line size in bytes
                 false,
             );
-            state.texture.draw(0, 0, state.width, state.height, false);
+            image.obs.draw(0, 0, image.width, image.height, false);
         }
     }
 }
@@ -151,19 +226,19 @@ impl Module for GamepadModule {
         let source = load_context
             .create_source_builder::<Source, State>()
             .enable_create()
-            // .enable_activate()
-            // .enable_deactivate()
             .enable_get_name()
             .enable_get_width()
             .enable_get_height()
-            // .enable_get_properties()
-            // .enable_get_defaults()
-            // .enable_update()
+            .enable_get_properties()
+            .enable_update()
             .enable_video_render()
+            // .enable_get_defaults()
+            // .enable_activate()
+            // .enable_deactivate()
             .build();
 
         load_context.register_source(source);
-        Logger::new().with_promote_debug(true).init().is_ok()
+        Logger::new().init().is_ok()
     }
 
     fn description() -> ObsString {

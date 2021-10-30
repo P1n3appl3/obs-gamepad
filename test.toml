@@ -1,0 +1,47 @@
+# inactive = "#123"
+# active = "#828"
+outline = "#282828"
+outline_weight = 1.5
+gate_radius = 50
+
+# [button_shape]
+# type = "circle"
+# radius = 20
+
+[[button]]
+id = 0
+pos = [50, 50]
+
+[[button]]
+id = 1
+pos = [500, 500]
+
+[button.shape]
+type = "rounded_rect"
+width = 40
+height = 40
+radius = 10
+
+[[axis]]
+id = 0
+pos = [300, 300]
+fill_dir = "right_to_left"
+
+[[button]]
+id = 3
+pos = [200, 400]
+
+[[stick]]
+x_axis = 0
+y_axis = 1
+pos = [400, 200]
+gate_weight = 2.5
+displacement = 50
+
+[[stick]]
+x_axis = 2
+y_axis = 3
+pos = [300, 100]
+radius = 30
+gate_weight = 2.5
+displacement = 50

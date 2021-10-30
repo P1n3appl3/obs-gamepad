@@ -1,7 +1,9 @@
 mod config;
 mod gamepad;
 
-use std::fs;
+use std::collections::BTreeMap;
+use std::io::Write;
+use std::{fs, io};
 use std::sync::mpsc;
 use std::time::{Duration, Instant};
 
@@ -23,7 +25,21 @@ const FPS: Option<Duration> = Some(Duration::from_micros(16666));
 
 fn main() -> Result<(), ()> {
     let mut gilrs = Gilrs::new().unwrap();
-    let mut gamepad = Gamepad::new(&mut gilrs);
+    let max_gamepads = gilrs.last_gamepad_hint();
+    let gamepads: BTreeMap<usize, String> = (0..max_gamepads)
+        .filter_map(|i| gilrs.gamepad(i).map(|g| (i, g.name().to_string())))
+        .collect();
+    for (id, name) in gamepads {
+        println!("{}: {}", id, name);
+    }
+    print!("\nEnter an id: ");
+    io::stdout().flush().unwrap();
+    let mut line = String::new();
+    io::stdin().read_line(&mut line).unwrap();
+    let mut gamepad = Gamepad {
+        id: line.trim().parse().unwrap(),
+        ..Default::default()
+    };
     let (tx, rx) = mpsc::channel();
     let mut watcher = notify::watcher(tx, Duration::from_millis(100)).unwrap();
     let args: Vec<String> = std::env::args().skip(1).collect();

@@ -1,8 +1,5 @@
-use std::io::{self, Write};
-
 use crate::config::{self, FillDir};
 use gilrs_core::Gilrs;
-use std::collections::BTreeMap;
 use tiny_skia::{
     Color, FillRule, Paint, Path, PathBuilder, Pixmap, Rect, Stroke, Transform,
 };
@@ -178,34 +175,21 @@ pub struct Dpad {
 #[derive(Clone, Default, Debug)]
 pub struct Gamepad {
     pub id: usize,
+    pub connected: bool,
     pub buttons: Vec<Button>,
     pub sticks: Vec<Stick>,
     pub axes: Vec<Axis>,
 }
 
 impl Gamepad {
-    pub fn new(gilrs: &mut Gilrs) -> Self {
-        let max_gamepads = gilrs.last_gamepad_hint();
-        let gamepads: BTreeMap<usize, String> = (0..max_gamepads)
-            .filter_map(|i| gilrs.gamepad(i).map(|g| (i, g.name().to_string())))
-            .collect();
-        for (id, name) in gamepads {
-            println!("{}: {}", id, name);
-        }
-        print!("\nEnter an id: ");
-        io::stdout().flush().unwrap();
-        let mut line = String::new();
-        io::stdin().read_line(&mut line).unwrap();
-        Gamepad {
-            id: line.trim().parse().unwrap(),
-            ..Default::default()
-        }
-    }
-
     pub fn clear(&mut self) {
         self.buttons.clear();
         self.sticks.clear();
         self.axes.clear();
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.buttons.is_empty() && self.sticks.is_empty() && self.axes.is_empty()
     }
 
     pub fn add_debug_inputs(&mut self, gilrs: &mut Gilrs) {
@@ -319,9 +303,8 @@ impl Gamepad {
                 ButtonPressed(code) => self.set_button(code.into_u32(), true),
                 ButtonReleased(code) => self.set_button(code.into_u32(), false),
                 AxisValueChanged(val, code) => self.set_axis(code.into_u32(), val),
-                Connected | Disconnected => {
-                    // TODO:
-                }
+                Connected => self.connected = true,
+                Disconnected => self.connected = false,
             }
         }
     }
@@ -329,9 +312,9 @@ impl Gamepad {
     pub fn render(&self, img: &mut Pixmap) {
         let mut stroke = Stroke::default();
         let mut paint = Paint::default();
+        paint.anti_alias = true;
         let f = FillRule::default();
         let t = Transform::default();
-        paint.anti_alias = true;
         img.fill(Color::TRANSPARENT);
 
         for button in &self.buttons {
@@ -351,7 +334,7 @@ impl Gamepad {
             paint.set_color(axis.fill.inactive);
             img.fill_path(&path, &paint, f, t, None);
 
-            // active partial fill
+            // active fill
             let percent = (axis.axis.normalized() + 1.0) / 2.0;
             use FillDir::*;
             let mut left = axis.path.left();
