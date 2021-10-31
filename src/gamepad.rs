@@ -1,5 +1,6 @@
 use crate::config::{self, FillDir};
-use gilrs_core::Gilrs;
+use gilrs_core::{EvCode, Gilrs};
+use log::error;
 use tiny_skia::{
     Color, FillRule, Paint, Path, PathBuilder, Pixmap, Rect, Stroke, Transform,
 };
@@ -58,7 +59,7 @@ impl Button {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub struct RawAxis {
     pub id: u32,
     pub id_index: u8,
@@ -71,29 +72,32 @@ pub struct RawAxis {
 impl RawAxis {
     pub fn new(id: u8, invert: bool, g: &gilrs_core::Gamepad) -> Self {
         let id_index = id;
-        let id = g.axes()[id_index as usize];
-        let info = g.axis_info(id).unwrap();
-        let id = id.into_u32();
-        let deadzone = info.deadzone;
-        let current = (info.min + info.max) / 2;
-        let range = (info.min, info.max);
-        RawAxis {
-            id,
-            id_index,
-            deadzone,
-            invert,
-            current,
-            range,
+        if let Some(id) = g.axes().get(id_index as usize) {
+            let info = g.axis_info(*id).unwrap();
+            let id = id.into_u32();
+            let deadzone = info.deadzone;
+            let current = (info.min + info.max) / 2;
+            let range = (info.min, info.max);
+            return RawAxis {
+                id,
+                id_index,
+                deadzone,
+                invert,
+                current,
+                range,
+            };
         }
+        Default::default()
     }
 
     fn update_id(&mut self, g: &gilrs_core::Gamepad) {
-        let id = g.axes()[self.id_index as usize];
-        let info = g.axis_info(id).unwrap();
-        self.id = id.into_u32();
-        self.deadzone = info.deadzone;
-        self.range = (info.min, info.max);
-        self.current = (info.min + info.max) / 2;
+        if let Some(id) = g.axes().get(self.id_index as usize) {
+            let info = g.axis_info(*id).unwrap();
+            self.id = id.into_u32();
+            self.deadzone = info.deadzone;
+            self.range = (info.min, info.max);
+            self.current = (info.min + info.max) / 2;
+        }
     }
 
     fn normalized(&self) -> f32 {
@@ -175,7 +179,7 @@ pub struct Dpad {
 #[derive(Clone, Default, Debug)]
 pub struct Gamepad {
     pub id: usize,
-    pub connected: bool,
+    pub connected: bool, // TODO: grey out or something
     pub buttons: Vec<Button>,
     pub sticks: Vec<Stick>,
     pub axes: Vec<Axis>,
@@ -198,25 +202,24 @@ impl Gamepad {
         let radius = 15.0;
 
         let gamepad = gilrs.gamepad(self.id).unwrap();
-        for (i, button) in gamepad.buttons().into_iter().enumerate() {
+        for (i, button) in gamepad.buttons().iter().enumerate() {
             let c = PathBuilder::from_circle(radius, i as f32 * spacing + radius, radius)
                 .unwrap();
             let active = Color::from_rgba8(20, 105, 200, 150);
             let inactive = Color::from_rgba8(20, 20, 20, 150);
             self.buttons.push(Button {
                 id: button.into_u32(),
-                id_index: 0,
+                id_index: i as u8,
                 pressed: false,
                 path: c,
                 fill: ColorPair { active, inactive },
                 outline: None,
-                // outline: Some((inactive, inactive, 2.0)),
             });
         }
 
         for i in 0..gamepad.axes().len() {
             self.axes.push(Axis {
-                axis: RawAxis::new(i as u8, false, &gamepad),
+                axis: RawAxis::new(i as u8, false, gamepad),
                 path: Rect::from_xywh(
                     radius * 2.0 + 10.0,
                     i as f32 * spacing,
@@ -234,26 +237,25 @@ impl Gamepad {
         }
     }
 
+    // TODO: custom gamecube config with octagonal gate and x/y/z paths
+
     pub fn load_config(&mut self, gilrs: &mut Gilrs, config: &config::Gamepad) {
         self.clear();
-        let gamepad = gilrs.gamepad(self.id).unwrap();
-
-        for b in &config.buttons {
-            self.buttons.push(b.load(gamepad, config));
+        if let Some(gamepad) = gilrs.gamepad(self.id) {
+            for b in &config.buttons {
+                self.buttons.push(b.load(gamepad, config));
+            }
+            for s in &config.sticks {
+                self.sticks.push(s.load(gamepad, config));
+            }
+            for a in &config.axes {
+                self.axes.push(a.load(gamepad, config));
+            }
+            self.minimize()
+        } else {
+            error!("couldn't get info for gamepad {}", self.id)
         }
-
-        for s in &config.sticks {
-            self.sticks.push(s.load(gamepad, config));
-        }
-
-        for a in &config.axes {
-            self.axes.push(a.load(gamepad, config));
-        }
-
-        self.minimize()
     }
-
-    // TODO: custom gamecube config with octagonal gate and x/y/z paths
 
     pub fn minimize(&mut self) {
         let bounds = self.bounds();
@@ -279,40 +281,54 @@ impl Gamepad {
     }
 
     pub fn switch_gamepad(&mut self, gilrs: &mut Gilrs, id: usize) {
-        let gamepad = gilrs.gamepad(id).unwrap();
-        let buttons = gamepad.buttons();
-        for b in &mut self.buttons {
-            b.id = buttons[b.id_index as usize].into_u32();
-        }
-        for s in &mut self.sticks {
-            s.x.update_id(&gamepad);
-            s.y.update_id(&gamepad);
-        }
-        for a in &mut self.axes {
-            a.axis.update_id(&gamepad);
+        if let Some(gamepad) = gilrs.gamepad(id) {
+            self.id = id;
+            let buttons = gamepad.buttons();
+            for b in &mut self.buttons {
+                b.id = buttons
+                    .get(b.id_index as usize)
+                    .cloned()
+                    .map(EvCode::into_u32)
+                    .unwrap_or_default();
+            }
+            for s in &mut self.sticks {
+                s.x.update_id(gamepad);
+                s.y.update_id(gamepad);
+            }
+            for a in &mut self.axes {
+                a.axis.update_id(gamepad);
+            }
+        } else {
+            error!("couldn't get info for gamepad {}", id);
         }
     }
 
-    pub fn update(&mut self, gilrs: &mut Gilrs) {
+    pub fn update(&mut self, gilrs: &mut Gilrs) -> bool {
+        let mut modified = false;
         while let Some(ev) = gilrs.next_event() {
             if ev.id != self.id {
                 continue;
             }
             use gilrs_core::EventType::*;
-            match ev.event {
+            modified |= match ev.event {
                 ButtonPressed(code) => self.set_button(code.into_u32(), true),
                 ButtonReleased(code) => self.set_button(code.into_u32(), false),
                 AxisValueChanged(val, code) => self.set_axis(code.into_u32(), val),
-                Connected => self.connected = true,
-                Disconnected => self.connected = false,
+                ev @ (Connected | Disconnected) => {
+                    self.connected = ev == Connected;
+                    true
+                }
             }
         }
+        modified
     }
 
     pub fn render(&self, img: &mut Pixmap) {
         let mut stroke = Stroke::default();
-        let mut paint = Paint::default();
-        paint.anti_alias = true;
+        let mut paint = Paint {
+            anti_alias: true,
+            ..Default::default()
+        };
         let f = FillRule::default();
         let t = Transform::default();
         img.fill(Color::TRANSPARENT);
@@ -347,11 +363,11 @@ impl Gamepad {
                 BottomToTop => top += axis.path.height() * (1.0 - percent),
                 RightToLeft => left += axis.path.width() * (1.0 - percent),
             };
-            let active_path = PathBuilder::from_rect(
-                Rect::from_ltrb(left, top, right, bottom).unwrap(),
-            );
-            paint.set_color(axis.fill.active);
-            img.fill_path(&active_path, &paint, f, t, None);
+            if let Some(rect) = Rect::from_ltrb(left, top, right, bottom) {
+                let active_path = PathBuilder::from_rect(rect);
+                paint.set_color(axis.fill.active);
+                img.fill_path(&active_path, &paint, f, t, None);
+            }
 
             // border
             if let Some((color, weight)) = axis.outline {
@@ -386,29 +402,36 @@ impl Gamepad {
         }
     }
 
-    fn set_button(&mut self, id: u32, state: bool) {
+    fn set_button(&mut self, id: u32, state: bool) -> bool {
+        let mut modified = false;
         for b in &mut self.buttons {
             if b.id == id {
+                modified |= b.pressed != state;
                 b.pressed = state;
-                return;
             }
         }
+        modified
     }
 
-    fn set_axis(&mut self, id: u32, state: i32) {
+    fn set_axis(&mut self, id: u32, state: i32) -> bool {
+        let mut modified = false;
         for axis in &mut self.axes {
             if axis.axis.id == id {
+                modified |= axis.axis.current != state;
                 axis.axis.current = state;
             }
         }
         for stick in &mut self.sticks {
             if stick.x.id == id {
                 stick.x.current = state;
+                modified |= state == stick.x.current;
             }
             if stick.y.id == id {
                 stick.y.current = state;
+                modified |= state == stick.y.current;
             }
         }
+        modified
     }
 
     pub fn bounds(&self) -> Rect {
@@ -417,7 +440,7 @@ impl Gamepad {
             .map(Button::bounds)
             .chain(self.sticks.iter().map(Stick::bounds))
             .chain(self.axes.iter().map(Axis::bounds))
-            .reduce(|a, b| combine(a, b))
-            .unwrap_or(Rect::from_ltrb(0.0, 0.0, 100.0, 100.0).unwrap())
+            .reduce(combine)
+            .unwrap_or_else(|| Rect::from_ltrb(0.0, 0.0, 100.0, 100.0).unwrap())
     }
 }

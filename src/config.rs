@@ -1,6 +1,13 @@
-use std::{f32::consts::SQRT_2, fmt};
+use std::{
+    f32::consts::SQRT_2,
+    fmt, path,
+    path::PathBuf,
+    sync::mpsc::{self, Receiver},
+    time::Duration,
+};
 
-use gilrs_core;
+use gilrs_core::EvCode;
+use notify::{DebouncedEvent, RecommendedWatcher, RecursiveMode, Watcher};
 use serde::{
     de::{self, Unexpected, Visitor},
     Deserialize, Deserializer,
@@ -8,6 +15,36 @@ use serde::{
 use tiny_skia::{self, Path, PathBuilder, Rect};
 
 use crate::gamepad::{self, ColorPair};
+
+pub struct ConfigWatcher {
+    pub watcher: RecommendedWatcher,
+    pub rx: Receiver<DebouncedEvent>,
+    pub path: Option<PathBuf>,
+}
+
+impl ConfigWatcher {
+    pub fn new(delay: Duration) -> Self {
+        let (tx, rx) = mpsc::channel();
+        Self {
+            watcher: RecommendedWatcher::new(tx, delay).unwrap(),
+            rx,
+            path: None,
+        }
+    }
+
+    pub fn change_file<P: AsRef<path::Path>>(&mut self, path: P) -> notify::Result<()> {
+        let path = path.as_ref();
+        if let Some(current) = &self.path {
+            if current.as_path() == path {
+                return Ok(());
+            }
+            self.watcher.unwatch(current.parent().unwrap())?;
+        }
+        self.path = Some(path.into());
+        self.watcher
+            .watch(path.parent().unwrap(), RecursiveMode::Recursive)
+    }
+}
 
 #[rustfmt::skip]
 pub fn rounded_rect(x: f32, y: f32, width: f32, height: f32, radius: f32) -> Path {
@@ -113,7 +150,7 @@ impl<'de> Deserialize<'de> for Color {
             where
                 E: de::Error,
             {
-                if !value.starts_with("#") {
+                if !value.starts_with('#') {
                     return Err(de::Error::invalid_value(
                         Unexpected::Str(value),
                         &"Hex code starting with a '#'",
@@ -147,27 +184,22 @@ impl<'de> Deserialize<'de> for Color {
 #[derive(Clone, Copy, Debug, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
 pub enum ButtonShape {
-    Circle {
-        radius: f32,
-    },
-    RoundedRect {
-        width: f32,
-        height: f32,
-        radius: f32,
-    },
+    Circle { radius: f32 },
+    RoundedRect { size: (f32, f32), radius: f32 },
 }
 
 impl Default for ButtonShape {
     fn default() -> Self {
-        Self::Circle { radius: 25.0 }
+        Self::Circle { radius: 15.0 }
     }
 }
 
 #[derive(Clone, Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
+// #[serde(deny_unknown_fields)]
 pub struct Button {
     pub id: u8,
     pub pos: (f32, f32),
+    #[serde(flatten)]
     pub shape: Option<ButtonShape>,
     pub fill: Option<Color>,
     pub fill_active: Option<Color>,
@@ -195,16 +227,18 @@ impl Button {
 
         use ButtonShape::*;
         gamepad::Button {
-            id: buttons[self.id as usize].into_u32(),
+            id: buttons
+                .get(self.id as usize)
+                .cloned()
+                .map(EvCode::into_u32)
+                .unwrap_or_default(),
             id_index: self.id,
             pressed: false,
             path: match self.shape.unwrap_or(config.button_shape) {
                 Circle { radius } => PathBuilder::from_circle(x, y, radius).unwrap(),
-                RoundedRect {
-                    width,
-                    height,
-                    radius,
-                } => rounded_rect(x, y, width, height, radius),
+                RoundedRect { size, radius } => {
+                    rounded_rect(x, y, size.0, size.1, radius)
+                }
             },
             fill: ColorPair {
                 inactive: self.fill.unwrap_or(config.inactive).into(),
@@ -278,8 +312,8 @@ impl Stick {
             .unwrap_or(4.0);
 
         gamepad::Stick {
-            x: gamepad::RawAxis::new(self.x_axis, self.invert_x, &gamepad),
-            y: gamepad::RawAxis::new(self.y_axis, self.invert_y, &gamepad),
+            x: gamepad::RawAxis::new(self.x_axis, self.invert_x, gamepad),
+            y: gamepad::RawAxis::new(self.y_axis, self.invert_y, gamepad),
             path: PathBuilder::from_circle(x, y, r).unwrap(),
             displacement: self.displacement.unwrap_or(r * 3.0 / 4.0),
             fill: ColorPair {
@@ -346,7 +380,7 @@ impl Axis {
         let size = self.size.unwrap_or(config.axis_size);
         let outline_weight = self.outline_weight.or(config.outline_weight).unwrap_or(2.0);
         gamepad::Axis {
-            axis: gamepad::RawAxis::new(self.id, self.invert, &gamepad),
+            axis: gamepad::RawAxis::new(self.id, self.invert, gamepad),
             path: Rect::from_xywh(self.pos.0, self.pos.1, size.0, size.1).unwrap(),
             direction: self.fill_dir.unwrap_or(config.fill_dir),
             fill: ColorPair {
@@ -359,7 +393,7 @@ impl Axis {
             .then(|| {
                 (
                     self.outline
-                        .unwrap_or(config.outline.unwrap_or_default())
+                        .unwrap_or_else(|| config.outline.unwrap_or_default())
                         .into(),
                     outline_weight,
                 )

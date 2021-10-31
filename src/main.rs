@@ -1,18 +1,20 @@
+#![allow(unused)]
 mod config;
 mod gamepad;
 
 use std::collections::BTreeMap;
 use std::io::Write;
-use std::{fs, io};
 use std::sync::mpsc;
 use std::time::{Duration, Instant};
+use std::{fs, io};
 
 use gilrs_core::Gilrs;
 use minifb::{Key, ScaleMode, Window, WindowOptions};
 use notify::{self, DebouncedEvent, RecursiveMode, Watcher};
 use tiny_skia::Pixmap;
 
-use crate::gamepad::Gamepad;
+use config::ConfigWatcher;
+use gamepad::Gamepad;
 
 fn create_image(gamepad: &Gamepad) -> Pixmap {
     let bounds = gamepad.bounds();
@@ -21,10 +23,7 @@ fn create_image(gamepad: &Gamepad) -> Pixmap {
     Pixmap::new(width as u32, height as u32).unwrap()
 }
 
-const FPS: Option<Duration> = Some(Duration::from_micros(16666));
-
-fn main() -> Result<(), ()> {
-    let mut gilrs = Gilrs::new().unwrap();
+fn pick_gamepad(gilrs: &mut Gilrs, gamepad: &mut Gamepad) {
     let max_gamepads = gilrs.last_gamepad_hint();
     let gamepads: BTreeMap<usize, String> = (0..max_gamepads)
         .filter_map(|i| gilrs.gamepad(i).map(|g| (i, g.name().to_string())))
@@ -36,27 +35,34 @@ fn main() -> Result<(), ()> {
     io::stdout().flush().unwrap();
     let mut line = String::new();
     io::stdin().read_line(&mut line).unwrap();
-    let mut gamepad = Gamepad {
-        id: line.trim().parse().unwrap(),
-        ..Default::default()
-    };
-    let (tx, rx) = mpsc::channel();
-    let mut watcher = notify::watcher(tx, Duration::from_millis(100)).unwrap();
+    gamepad.switch_gamepad(gilrs, line.trim().parse().unwrap());
+}
+
+fn update_screen(img: &mut Pixmap, buf: &mut [u32]) {
+    for (pixel, n) in img.pixels_mut().iter().zip(buf.iter_mut()) {
+        *n = (pixel.red() as u32) << 16
+            | (pixel.green() as u32) << 8
+            | pixel.blue() as u32;
+    }
+}
+
+const FPS: Option<Duration> = Some(Duration::from_micros(16666));
+const BENCHMARK: bool = false;
+
+fn main() -> Result<(), ()> {
+    let mut gilrs = Gilrs::new().unwrap();
+    let mut gamepad = Gamepad::default();
+    let mut watcher = ConfigWatcher::new(Duration::from_millis(100));
     let args: Vec<String> = std::env::args().skip(1).collect();
     let watch_file = match args.as_slice() {
-        [] => {
-            gamepad.add_debug_inputs(&mut gilrs);
-            None
-        }
+        [] => None,
         [path] => {
             gamepad.load_config(
                 &mut gilrs,
                 &toml::from_str(&fs::read_to_string(path).unwrap()).unwrap(),
             );
             let path = fs::canonicalize(path).unwrap();
-            watcher
-                .watch(path.parent().unwrap(), RecursiveMode::Recursive)
-                .unwrap();
+            watcher.change_file(&path);
             Some(path)
         }
         [_, _, ..] => {
@@ -64,6 +70,11 @@ fn main() -> Result<(), ()> {
             return Err(());
         }
     };
+
+    pick_gamepad(&mut gilrs, &mut gamepad);
+    if watch_file.is_none() {
+        gamepad.add_debug_inputs(&mut gilrs);
+    }
 
     let options = WindowOptions {
         resize: false,
@@ -75,6 +86,8 @@ fn main() -> Result<(), ()> {
     let mut width = img.width() as usize;
     let mut height = img.height() as usize;
     let mut buf = vec![0u32; width * height];
+    gamepad.render(&mut img);
+    update_screen(&mut img, &mut buf);
     let mut window = Window::new("Test", width, height, options).unwrap();
     window.limit_update_rate(FPS);
 
@@ -83,7 +96,7 @@ fn main() -> Result<(), ()> {
     while window.is_open()
         && !(window.is_key_down(Key::Escape) || window.is_key_down(Key::Q))
     {
-        while let Ok(event) = rx.try_recv() {
+        while let Ok(event) = watcher.rx.try_recv() {
             use DebouncedEvent::*;
             match event {
                 Create(p) | Write(p) if p == *watch_file.as_ref().unwrap() => {
@@ -104,6 +117,8 @@ fn main() -> Result<(), ()> {
                                     Window::new("Test", width, height, options).unwrap();
                                 window.limit_update_rate(FPS);
                             }
+                            gamepad.render(&mut img);
+                            update_screen(&mut img, &mut buf);
                         }
                         Err(e) => println!("Config reload failed: {}", e),
                     }
@@ -113,12 +128,9 @@ fn main() -> Result<(), ()> {
         }
 
         let start = Instant::now();
-        gamepad.update(&mut gilrs);
-        gamepad.render(&mut img);
-        for (pixel, n) in img.pixels_mut().iter().zip(buf.iter_mut()) {
-            *n = (pixel.red() as u32) << 16
-                | (pixel.green() as u32) << 8
-                | pixel.blue() as u32;
+        if gamepad.update(&mut gilrs) || BENCHMARK {
+            gamepad.render(&mut img);
+            update_screen(&mut img, &mut buf);
         }
         let end = Instant::now();
         total += (end - start).as_micros();

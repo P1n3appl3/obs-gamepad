@@ -1,22 +1,17 @@
 mod config;
 mod gamepad;
 
-use std::{
-    borrow::Cow,
-    fs,
-    path::PathBuf,
-    sync::mpsc::{self, Receiver},
-    time::Duration,
-};
+use std::{borrow::Cow, fs, path::PathBuf, time::Duration};
 
 use gilrs_core::{self, Gilrs};
-use log::info;
-use notify::{self, DebouncedEvent, RecommendedWatcher, RecursiveMode, Watcher};
+use log::{error, info};
+use notify::{self, DebouncedEvent};
 use obs_wrapper::{
     graphics::*, log::Logger, obs_register_module, obs_string, prelude::*, source::*,
 };
 use tiny_skia::Pixmap;
 
+use config::ConfigWatcher;
 use gamepad::Gamepad;
 
 obs_register_module!(GamepadModule);
@@ -26,11 +21,22 @@ struct GamepadModule {
 
 struct Source;
 
+impl Sourceable for Source {
+    fn get_id() -> ObsString {
+        obs_string!("gamepad")
+    }
+
+    fn get_type() -> SourceType {
+        SourceType::INPUT
+    }
+}
+
 pub struct Image {
     pub mine: Pixmap,
     pub obs: GraphicsTexture,
     pub width: u32,
     pub height: u32,
+    pub force_render: bool,
 }
 
 impl From<&Gamepad> for Image {
@@ -46,14 +52,9 @@ impl From<&Gamepad> for Image {
             obs: GraphicsTexture::new(width, height, GraphicsColorFormat::RGBA),
             width,
             height,
+            force_render: true,
         }
     }
-}
-
-pub struct ConfigWatcher {
-    pub watcher: RecommendedWatcher,
-    pub receiver: Receiver<DebouncedEvent>,
-    pub path: Option<PathBuf>,
 }
 
 struct State {
@@ -63,19 +64,45 @@ struct State {
     pub watcher: ConfigWatcher,
 }
 
-impl Drop for State {
-    fn drop(&mut self) {
-        info!("state destroyed")
+impl State {
+    fn update_config(&mut self) {
+        info!("config update");
+        let path = self.watcher.path.as_ref().unwrap();
+        self.image.force_render = true;
+        match toml::from_str(&fs::read_to_string(path).unwrap()) {
+            Ok(config) => {
+                self.gamepad.load_config(&mut self.gilrs, &config);
+                let bounds = self.gamepad.bounds();
+                if self.image.width != bounds.right() as u32
+                    || self.image.height != bounds.bottom() as u32
+                {
+                    info!("resized image");
+                    self.image = (&self.gamepad).into();
+                }
+            }
+            Err(e) => {
+                error!("Config reload failed: {}", e);
+            }
+        }
+    }
+
+    fn update_settings(&mut self, settings: &DataObj) {
+        if let Some(id) = settings.get(SETTING_GAMEPAD) {
+            self.gamepad.switch_gamepad(&mut self.gilrs, id);
+        }
+        if let Some(path) = settings.get::<Cow<str>, _>(SETTING_FILE) {
+            let new = PathBuf::from(path.as_ref());
+            if self.watcher.path.as_ref() != Some(&new) {
+                self.watcher.change_file(new).unwrap();
+                self.update_config();
+            }
+        }
     }
 }
 
-impl Sourceable for Source {
-    fn get_id() -> ObsString {
-        obs_string!("gamepad")
-    }
-
-    fn get_type() -> SourceType {
-        SourceType::INPUT
+impl Drop for State {
+    fn drop(&mut self) {
+        info!("state destroyed")
     }
 }
 
@@ -84,57 +111,23 @@ const SETTING_FILE: ObsString = obs_string!("settings");
 
 impl CreatableSource<State> for Source {
     fn create(ctx: &mut CreatableSourceContext<State>, _source: SourceContext) -> State {
-        ctx.register_hotkey(
-            obs_string!("next gamepad"),
-            obs_string!("switch to a different gamepad"),
-            |key, state| {
-                if let Some(_state) = state {
-                    if key.pressed {
-                        // TODO:
-                    }
-                }
-                info!(
-                    "{} button: {}",
-                    if key.pressed { "pressed" } else { "released" },
-                    key.id()
-                );
-            },
-        );
-        let settings = &ctx.settings;
-        let mut gamepad = Gamepad {
-            id: settings.get(SETTING_GAMEPAD).unwrap_or_default(),
-            ..Default::default()
-        };
-        let (tx, rx) = mpsc::channel();
-        let mut watcher = ConfigWatcher {
-            watcher: RecommendedWatcher::new(tx, Duration::from_millis(100)).unwrap(),
-            receiver: rx,
-            path: None,
-        };
-        let mut gilrs = Gilrs::new().unwrap();
-        if let Some(path) = settings.get::<Cow<str>, _>(SETTING_FILE) {
-            let path = PathBuf::from(path.as_ref());
-            let data = &toml::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
-            gamepad.load_config(&mut gilrs, &data);
-            watcher
-                .watcher
-                .watch(path.parent().unwrap(), RecursiveMode::Recursive)
-                .unwrap();
-            watcher.path = Some(path);
-        }
-        info!("Created gamepad source");
-        State {
+        let gamepad = Gamepad::default();
+        let gilrs = Gilrs::new().unwrap();
+        let watcher = ConfigWatcher::new(Duration::from_millis(200));
+        let mut state = State {
             image: (&gamepad).into(),
             gilrs,
             gamepad,
             watcher,
-        }
+        };
+        state.update_settings(&ctx.settings);
+        info!("created gamepad source");
+        state
     }
 }
 
 impl GetPropertiesSource<State> for Source {
     fn get_properties(state: &mut Option<State>, properties: &mut Properties) {
-        info!("loading props");
         if let Some(state) = state {
             let max_gamepads = state.gilrs.last_gamepad_hint();
             properties.add(
@@ -152,21 +145,23 @@ impl GetPropertiesSource<State> for Source {
 }
 
 // TODO: https://github.com/bennetthardwick/rust-obs-plugins/pull/15
+// default to last active gamepad and an xbox config file
 impl GetDefaultsSource<State> for Source {
     fn get_defaults(_settings: &mut DataObj) {
-        // TODO: last active gamepad, and xbox default file
         unimplemented!()
     }
 }
 
 impl UpdateSource<State> for Source {
     fn update(
-        _state: &mut Option<State>,
-        _settings: &mut DataObj,
+        state: &mut Option<State>,
+        settings: &mut DataObj,
         _context: &mut GlobalContext,
     ) {
         info!("settings update");
-        // todo!("settings update")
+        if let Some(state) = state {
+            state.update_settings(settings);
+        }
     }
 }
 
@@ -194,21 +189,31 @@ impl VideoRenderSource<State> for Source {
         _ctx: &mut GlobalContext,
         _vid_ctx: &mut VideoRenderContext,
     ) {
-        if let Some(State {
-            image,
-            gamepad,
-            gilrs,
-            ..
-        }) = state
-        {
-            gamepad.update(gilrs);
-            gamepad.render(&mut image.mine);
-            image.obs.set_image(
-                image.mine.data(),
-                image.width * 4, // line size in bytes
-                false,
-            );
-            image.obs.draw(0, 0, image.width, image.height, false);
+        if let Some(state) = state {
+            while let Ok(event) = state.watcher.rx.try_recv() {
+                use DebouncedEvent::*;
+                match event {
+                    Create(p) | Write(p) => {
+                        if state.watcher.path == Some(p) {
+                            state.update_config()
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            if state.gamepad.update(&mut state.gilrs) || state.image.force_render {
+                state.image.force_render = false;
+                state.gamepad.render(&mut state.image.mine);
+                state.image.obs.set_image(
+                    state.image.mine.data(),
+                    state.image.width * 4, // line size in bytes
+                    false,
+                );
+            }
+            state
+                .image
+                .obs
+                .draw(0, 0, state.image.width, state.image.height, false);
         }
     }
 }
@@ -236,6 +241,7 @@ impl Module for GamepadModule {
             // .enable_activate()
             // .enable_deactivate()
             .build();
+        // TODO: set source icon_type
 
         load_context.register_source(source);
         Logger::new().init().is_ok()
