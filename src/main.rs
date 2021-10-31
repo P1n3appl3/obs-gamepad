@@ -4,6 +4,7 @@ mod gamepad;
 
 use std::collections::BTreeMap;
 use std::io::Write;
+use std::path::PathBuf;
 use std::sync::mpsc;
 use std::time::{Duration, Instant};
 use std::{fs, io};
@@ -28,6 +29,7 @@ fn pick_gamepad(gilrs: &mut Gilrs, gamepad: &mut Gamepad) {
     let gamepads: BTreeMap<usize, String> = (0..max_gamepads)
         .filter_map(|i| gilrs.gamepad(i).map(|g| (i, g.name().to_string())))
         .collect();
+    println!("\nDetected {} gamepads:", max_gamepads);
     for (id, name) in gamepads {
         println!("{}: {}", id, name);
     }
@@ -54,27 +56,24 @@ fn main() -> Result<(), ()> {
     let mut gamepad = Gamepad::default();
     let mut watcher = ConfigWatcher::new(Duration::from_millis(100));
     let args: Vec<String> = std::env::args().skip(1).collect();
-    let watch_file = match args.as_slice() {
-        [] => None,
-        [path] => {
-            gamepad.load_config(
-                &mut gilrs,
-                &toml::from_str(&fs::read_to_string(path).unwrap()).unwrap(),
-            );
-            let path = fs::canonicalize(path).unwrap();
-            watcher.change_file(&path);
-            Some(path)
-        }
+    let arg = match args.as_slice() {
+        [] => "test.toml",
+        [path] => path,
         [_, _, ..] => {
             println!("Pass no args for debug mode, or just the path to a config file");
             return Err(());
         }
     };
+    let watch_file = fs::canonicalize(arg).unwrap();
+    watcher.change_file(&watch_file);
 
-    pick_gamepad(&mut gilrs, &mut gamepad);
-    if watch_file.is_none() {
-        gamepad.add_debug_inputs(&mut gilrs);
+    let config: Result<config::Gamepad, toml::de::Error> =
+        toml::from_str(&fs::read_to_string(&watch_file).unwrap());
+    match config {
+        Ok(c) => gamepad.load_config(&mut gilrs, &c),
+        Err(e) => println!("Invalid config: {}\n", e),
     }
+    pick_gamepad(&mut gilrs, &mut gamepad);
 
     let options = WindowOptions {
         resize: false,
@@ -99,7 +98,7 @@ fn main() -> Result<(), ()> {
         while let Ok(event) = watcher.rx.try_recv() {
             use DebouncedEvent::*;
             match event {
-                Create(p) | Write(p) if p == *watch_file.as_ref().unwrap() => {
+                Create(p) | Write(p) if watch_file == p => {
                     match toml::from_str(&fs::read_to_string(p).unwrap()) {
                         Ok(config) => {
                             println!("Reloaded config...");

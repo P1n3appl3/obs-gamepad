@@ -182,10 +182,10 @@ impl<'de> Deserialize<'de> for Color {
 }
 
 #[derive(Clone, Copy, Debug, Deserialize)]
-#[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
+#[serde(untagged, deny_unknown_fields)]
 pub enum ButtonShape {
-    Circle { radius: f32 },
     RoundedRect { size: (f32, f32), radius: f32 },
+    Circle { radius: f32 },
 }
 
 impl Default for ButtonShape {
@@ -195,11 +195,10 @@ impl Default for ButtonShape {
 }
 
 #[derive(Clone, Debug, Deserialize)]
-// #[serde(deny_unknown_fields)]
+#[serde(deny_unknown_fields)]
 pub struct Button {
     pub id: u8,
     pub pos: (f32, f32),
-    #[serde(flatten)]
     pub shape: Option<ButtonShape>,
     pub fill: Option<Color>,
     pub fill_active: Option<Color>,
@@ -253,12 +252,12 @@ impl Button {
     }
 }
 
+// TODO: octagonal gate
 #[derive(Clone, Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Stick {
     pub pos: (f32, f32),
-    pub x_axis: u8,
-    pub y_axis: u8,
+    pub axes: (u8, u8),
     #[serde(default)]
     pub invert_x: bool,
     #[serde(default)]
@@ -312,8 +311,8 @@ impl Stick {
             .unwrap_or(4.0);
 
         gamepad::Stick {
-            x: gamepad::RawAxis::new(self.x_axis, self.invert_x, gamepad),
-            y: gamepad::RawAxis::new(self.y_axis, self.invert_y, gamepad),
+            x: gamepad::RawAxis::new(self.axes.0, self.invert_x, gamepad),
+            y: gamepad::RawAxis::new(self.axes.1, self.invert_y, gamepad),
             path: PathBuilder::from_circle(x, y, r).unwrap(),
             displacement: self.displacement.unwrap_or(r * 3.0 / 4.0),
             fill: ColorPair {
@@ -439,11 +438,11 @@ pub struct Gamepad {
     pub axis_size: (f32, f32),
     #[serde(default)]
     pub fill_dir: FillDir,
-    #[serde(default, rename = "button")]
+    #[serde(default)]
     pub buttons: Vec<Button>,
-    #[serde(default, rename = "stick")]
+    #[serde(default)]
     pub sticks: Vec<Stick>,
-    #[serde(default, rename = "axis")]
+    #[serde(default)]
     pub axes: Vec<Axis>,
 }
 

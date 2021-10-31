@@ -196,49 +196,6 @@ impl Gamepad {
         self.buttons.is_empty() && self.sticks.is_empty() && self.axes.is_empty()
     }
 
-    pub fn add_debug_inputs(&mut self, gilrs: &mut Gilrs) {
-        self.clear();
-        let spacing = 35.0;
-        let radius = 15.0;
-
-        let gamepad = gilrs.gamepad(self.id).unwrap();
-        for (i, button) in gamepad.buttons().iter().enumerate() {
-            let c = PathBuilder::from_circle(radius, i as f32 * spacing + radius, radius)
-                .unwrap();
-            let active = Color::from_rgba8(20, 105, 200, 150);
-            let inactive = Color::from_rgba8(20, 20, 20, 150);
-            self.buttons.push(Button {
-                id: button.into_u32(),
-                id_index: i as u8,
-                pressed: false,
-                path: c,
-                fill: ColorPair { active, inactive },
-                outline: None,
-            });
-        }
-
-        for i in 0..gamepad.axes().len() {
-            self.axes.push(Axis {
-                axis: RawAxis::new(i as u8, false, gamepad),
-                path: Rect::from_xywh(
-                    radius * 2.0 + 10.0,
-                    i as f32 * spacing,
-                    radius * 10.0,
-                    radius * 2.0,
-                )
-                .unwrap(),
-                direction: FillDir::LeftToRight,
-                fill: ColorPair {
-                    active: Color::from_rgba8(20, 105, 200, 150),
-                    inactive: Color::BLACK,
-                },
-                outline: Some((Color::from_rgba8(20, 20, 20, 150), 2.0)),
-            });
-        }
-    }
-
-    // TODO: custom gamecube config with octagonal gate and x/y/z paths
-
     pub fn load_config(&mut self, gilrs: &mut Gilrs, config: &config::Gamepad) {
         self.clear();
         if let Some(gamepad) = gilrs.gamepad(self.id) {

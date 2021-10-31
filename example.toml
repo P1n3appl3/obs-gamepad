@@ -1,97 +1,38 @@
-# inactive = "#123"
-# active = "#828"
+inactive = "#123"
+active = "#aaaa"
 # outline = "#282828"
-# outline_weight = 1.5
+outline_weight = 1.5
 # gate_radius = 50
+button_shape = { radius = 20 }
 
-[button_shape]
-type = "circle"
-radius = 20
 
-[[button]] # A
-id = 2
-fill_active = '#f00'
-pos = [400, 150]
+buttons = [
+  { id = 2, pos = [400, 150], fill_active = '#f00' },                    # A
+  { id = 1, pos = [350, 200], fill_active = '#ff0' },                    # B
+  { id = 3, pos = [350, 100], fill_active = '#00f' },                    # X
+  { id = 0, pos = [300, 150], fill_active = '#0f0' },                    # Y
+  { id = 4, pos = [120, 20], shape = { size = [80, 40], radius = 10 } }, # LB
+  { id = 5, pos = [250, 20], shape = { size = [80, 40], radius = 10 } }, # RB
+  { id = 6, pos = [20, 20], shape = { size = [80, 40], radius = 10 } },  # LT
+  { id = 7, pos = [350, 20], shape = { size = [80, 40], radius = 10 } }, # RT
+  { id = 9, pos = [250, 110], shape = { radius = 10 } },                 # +
+  { id = 8, pos = [200, 110], shape = { radius = 10 } },                 # -
+  { id = 12, pos = [250, 140], shape = { radius = 10 } },                # home
+  { id = 13, pos = [200, 140], shape = { radius = 10 } },                # screen shot
+  { id = 10, pos = [173, 210], shape = { radius = 10 } },                # left stick
+  { id = 11, pos = [233, 210], shape = { radius = 10 } },                # right stick
+]
 
-[[button]] # B
-id = 1
-fill_active = '#ff0'
-pos = [350, 200]
-
-[[button]] # X
-id = 3
-fill_active = '#00f'
-pos = [350, 100]
-
-[[button]] # Y
-id = 0
-fill_active = '#0f0'
-pos = [300, 150]
-
-[[button]] # LT
-id = 6
-type = "rounded_rect"
-pos = [100, 20]
-size = [80, 40]
-radius = 10
-
-[[button]] # RT
-id = 7
-type = "rounded_rect"
-pos = [200, 20]
-size = [80, 40]
-radius = 10
-
-[[button]] # LB
-id = 4
-type = "rounded_rect"
-pos = [20, 20]
-size = [80, 40]
-radius = 10
-
-[[button]] # RB
-id = 5
-type = "rounded_rect"
-pos = [300, 20]
-size = [80, 40]
-radius = 10
-
-[[button]] # +
-id = 9
-pos = [250, 110]
-type = "circle"
-radius = 10
-
-[[button]] # -
-id = 8
-pos = [200, 110]
-type = "circle"
-radius = 10
-
-[[button]] # home
-id = 13
-pos = [250, 140]
-type = "circle"
-radius = 10
-
-[[button]] # capture
-id = 14
-pos = [200, 140]
-type = "circle"
-radius = 10
-
-[[stick]]
-x_axis = 0
-y_axis = 1
+[[sticks]] # left
+axes = [0, 1]
 pos = [100, 150]
 gate = "#282828"
 gate_radius = 66
 gate_weight = 3.1
 displacement = 50
 
-[[stick]]
-x_axis = 2
-y_axis = 3
+[[sticks]] # right
+axes = [2, 3]
 pos = [280, 260]
 radius = 30
 gate = "#282828"
@@ -99,13 +40,13 @@ gate_weight = 2
 gate_radius = 40
 displacement = 30
 
-[[axis]] # dpad x
+[[axes]] # dpad x
 id = 4
 pos = [75, 275]
 invert = true
 size = [80, 10]
 
-[[axis]] # dpad y
+[[axes]] # dpad y
 id = 5
 pos = [110, 240]
 invert = true
