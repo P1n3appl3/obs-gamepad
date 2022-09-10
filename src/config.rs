@@ -208,11 +208,7 @@ pub struct Button {
 }
 
 impl Button {
-    pub fn load(
-        &self,
-        gamepad: &gilrs_core::Gamepad,
-        config: &Gamepad,
-    ) -> gamepad::Button {
+    pub fn load(&self, gamepad: &gilrs_core::Gamepad, config: &Gamepad) -> gamepad::Button {
         let buttons = gamepad.buttons();
         let (x, y) = self.pos;
         let outline_active = self
@@ -235,9 +231,7 @@ impl Button {
             pressed: false,
             path: match self.shape.unwrap_or(config.button_shape) {
                 Circle { radius } => PathBuilder::from_circle(x, y, radius).unwrap(),
-                RoundedRect { size, radius } => {
-                    rounded_rect(x, y, size.0, size.1, radius)
-                }
+                RoundedRect { size, radius } => rounded_rect(x, y, size.0, size.1, radius),
             },
             fill: ColorPair {
                 inactive: self.fill.unwrap_or(config.inactive).into(),
@@ -276,11 +270,7 @@ pub struct Stick {
 }
 
 impl Stick {
-    pub fn load(
-        &self,
-        gamepad: &gilrs_core::Gamepad,
-        config: &Gamepad,
-    ) -> gamepad::Stick {
+    pub fn load(&self, gamepad: &gilrs_core::Gamepad, config: &Gamepad) -> gamepad::Stick {
         let (x, y) = self.pos;
         let r = self.radius.unwrap_or(config.stick_radius);
         let outline_active = self

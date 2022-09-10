@@ -7,7 +7,7 @@ use gilrs_core::{self, Gilrs};
 use log::{error, info};
 use notify::{self, DebouncedEvent};
 use obs_wrapper::{
-    graphics::*, log::Logger, obs_register_module, obs_string, prelude::*, source::*,
+    graphics::*, log::Logger, obs_register_module, obs_string, prelude::*, properties::*, source::*,
 };
 use tiny_skia::Pixmap;
 
@@ -19,16 +19,11 @@ struct GamepadModule {
     context: ModuleContext,
 }
 
-struct Source;
-
-impl Sourceable for Source {
-    fn get_id() -> ObsString {
-        obs_string!("gamepad")
-    }
-
-    fn get_type() -> SourceType {
-        SourceType::INPUT
-    }
+struct Source {
+    pub image: Image,
+    pub gilrs: Gilrs,
+    pub gamepad: Gamepad,
+    pub watcher: ConfigWatcher,
 }
 
 pub struct Image {
@@ -57,14 +52,7 @@ impl From<&Gamepad> for Image {
     }
 }
 
-struct State {
-    pub image: Image,
-    pub gilrs: Gilrs,
-    pub gamepad: Gamepad,
-    pub watcher: ConfigWatcher,
-}
-
-impl State {
+impl Source {
     fn update_config(&mut self) {
         info!("config update");
         let path = self.watcher.path.as_ref().unwrap();
@@ -100,7 +88,7 @@ impl State {
     }
 }
 
-impl Drop for State {
+impl Drop for Source {
     fn drop(&mut self) {
         info!("state destroyed")
     }
@@ -109,12 +97,12 @@ impl Drop for State {
 const SETTING_GAMEPAD: ObsString = obs_string!("gamepad");
 const SETTING_FILE: ObsString = obs_string!("settings");
 
-impl CreatableSource<State> for Source {
-    fn create(ctx: &mut CreatableSourceContext<State>, _source: SourceContext) -> State {
+impl Sourceable for Source {
+    fn create(ctx: &mut CreatableSourceContext<Source>, _source: SourceContext) -> Source {
         let gamepad = Gamepad::default();
         let gilrs = Gilrs::new().unwrap();
         let watcher = ConfigWatcher::new(Duration::from_millis(200));
-        let mut state = State {
+        let mut state = Source {
             image: (&gamepad).into(),
             gilrs,
             gamepad,
@@ -124,97 +112,92 @@ impl CreatableSource<State> for Source {
         info!("created gamepad source");
         state
     }
+
+    fn get_id() -> ObsString {
+        obs_string!("gamepad")
+    }
+
+    fn get_type() -> SourceType {
+        SourceType::INPUT
+    }
 }
 
-impl GetPropertiesSource<State> for Source {
-    fn get_properties(state: &mut Option<State>, properties: &mut Properties) {
-        if let Some(state) = state {
-            let max_gamepads = state.gilrs.last_gamepad_hint();
-            properties.add(
-                SETTING_GAMEPAD,
-                obs_string!("Gamepad ID"),
-                NumberProp::new_int().with_range(0..max_gamepads),
-            );
-            properties.add(
-                SETTING_FILE,
-                obs_string!("Layout File"),
-                PathProp::new(PathType::File),
-            );
-        }
+impl GetPropertiesSource for Source {
+    fn get_properties(&mut self) -> Properties {
+        let max_gamepads = self.gilrs.last_gamepad_hint();
+        let mut props = Properties::new();
+        props.add(
+            SETTING_GAMEPAD,
+            obs_string!("Gamepad ID"),
+            NumberProp::new_int().with_range(0..max_gamepads),
+        );
+        props.add(
+            SETTING_FILE,
+            obs_string!("Layout File"),
+            PathProp::new(PathType::File),
+        );
+        props
     }
 }
 
 // TODO: https://github.com/bennetthardwick/rust-obs-plugins/pull/15
 // default to last active gamepad and an xbox config file
-impl GetDefaultsSource<State> for Source {
+impl GetDefaultsSource for Source {
     fn get_defaults(_settings: &mut DataObj) {
         unimplemented!()
     }
 }
 
-impl UpdateSource<State> for Source {
-    fn update(
-        state: &mut Option<State>,
-        settings: &mut DataObj,
-        _context: &mut GlobalContext,
-    ) {
+impl UpdateSource for Source {
+    fn update(&mut self, settings: &mut DataObj, _context: &mut GlobalContext) {
         info!("settings update");
-        if let Some(state) = state {
-            state.update_settings(settings);
-        }
+        self.update_settings(settings);
     }
 }
 
-impl GetNameSource<State> for Source {
+impl GetNameSource for Source {
     fn get_name() -> ObsString {
         obs_string!("Gamepad")
     }
 }
 
-impl GetWidthSource<State> for Source {
-    fn get_width(state: &mut Option<State>) -> u32 {
-        state.as_ref().map(|s| s.image.width).unwrap()
+impl GetWidthSource for Source {
+    fn get_width(&mut self) -> u32 {
+        self.image.width
     }
 }
 
-impl GetHeightSource<State> for Source {
-    fn get_height(state: &mut Option<State>) -> u32 {
-        state.as_ref().map(|s| s.image.height).unwrap()
+impl GetHeightSource for Source {
+    fn get_height(&mut self) -> u32 {
+        self.image.height
     }
 }
 
-impl VideoRenderSource<State> for Source {
-    fn video_render(
-        state: &mut Option<State>,
-        _ctx: &mut GlobalContext,
-        _vid_ctx: &mut VideoRenderContext,
-    ) {
-        if let Some(state) = state {
-            while let Ok(event) = state.watcher.rx.try_recv() {
-                use DebouncedEvent::*;
-                match event {
-                    Create(p) | Write(p) => {
-                        if state.watcher.path == Some(p) {
-                            state.update_config()
-                        }
+impl VideoRenderSource for Source {
+    fn video_render(&mut self, _ctx: &mut GlobalContext, _vid_ctx: &mut VideoRenderContext) {
+        while let Ok(event) = self.watcher.rx.try_recv() {
+            use DebouncedEvent::*;
+            match event {
+                Create(p) | Write(p) => {
+                    if self.watcher.path == Some(p) {
+                        self.update_config()
                     }
-                    _ => {}
                 }
+                _ => {}
             }
-            if state.gamepad.update(&mut state.gilrs) || state.image.force_render {
-                state.image.force_render = false;
-                state.gamepad.render(&mut state.image.mine);
-                state.image.obs.set_image(
-                    state.image.mine.data(),
-                    state.image.width * 4, // line size in bytes
-                    false,
-                );
-            }
-            state
-                .image
-                .obs
-                .draw(0, 0, state.image.width, state.image.height, false);
         }
+        if self.gamepad.update(&mut self.gilrs) || self.image.force_render {
+            self.image.force_render = false;
+            self.gamepad.render(&mut self.image.mine);
+            self.image.obs.set_image(
+                self.image.mine.data(),
+                self.image.width * 4, // line size in bytes
+                false,
+            );
+        }
+        self.image
+            .obs
+            .draw(0, 0, self.image.width, self.image.height, false);
     }
 }
 
@@ -229,8 +212,7 @@ impl Module for GamepadModule {
 
     fn load(&mut self, load_context: &mut LoadContext) -> bool {
         let source = load_context
-            .create_source_builder::<Source, State>()
-            .enable_create()
+            .create_source_builder::<Source>()
             .enable_get_name()
             .enable_get_width()
             .enable_get_height()

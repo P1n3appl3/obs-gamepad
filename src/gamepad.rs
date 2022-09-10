@@ -1,9 +1,7 @@
 use crate::config::{self, FillDir};
 use gilrs_core::{EvCode, Gilrs};
 use log::error;
-use tiny_skia::{
-    Color, FillRule, Paint, Path, PathBuilder, Pixmap, Rect, Stroke, Transform,
-};
+use tiny_skia::{Color, FillRule, Paint, Path, PathBuilder, Pixmap, Rect, Stroke, Transform};
 
 fn combine(a: Rect, b: Rect) -> Rect {
     Rect::from_ltrb(

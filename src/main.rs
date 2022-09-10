@@ -42,9 +42,7 @@ fn pick_gamepad(gilrs: &mut Gilrs, gamepad: &mut Gamepad) {
 
 fn update_screen(img: &mut Pixmap, buf: &mut [u32]) {
     for (pixel, n) in img.pixels_mut().iter().zip(buf.iter_mut()) {
-        *n = (pixel.red() as u32) << 16
-            | (pixel.green() as u32) << 8
-            | pixel.blue() as u32;
+        *n = (pixel.red() as u32) << 16 | (pixel.green() as u32) << 8 | pixel.blue() as u32;
     }
 }
 
@@ -92,9 +90,7 @@ fn main() -> Result<(), ()> {
 
     let mut times = 0;
     let mut total = 0u128;
-    while window.is_open()
-        && !(window.is_key_down(Key::Escape) || window.is_key_down(Key::Q))
-    {
+    while window.is_open() && !(window.is_key_down(Key::Escape) || window.is_key_down(Key::Q)) {
         while let Ok(event) = watcher.rx.try_recv() {
             use DebouncedEvent::*;
             match event {
@@ -112,8 +108,7 @@ fn main() -> Result<(), ()> {
                                 width = img.width() as usize;
                                 height = img.height() as usize;
                                 buf = vec![0u32; width * height];
-                                window =
-                                    Window::new("Test", width, height, options).unwrap();
+                                window = Window::new("Test", width, height, options).unwrap();
                                 window.limit_update_rate(FPS);
                             }
                             gamepad.render(&mut img);
