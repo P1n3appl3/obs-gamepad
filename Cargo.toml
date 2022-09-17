@@ -8,14 +8,14 @@ name = "gamepad"
 crate-type = ["cdylib"]
 
 [dependencies]
-obs-wrapper = { git = "https://github.com/bennetthardwick/rust-obs-plugins" }
+obs-wrapper = { path = "../../rust-obs-plugins" }
 tiny-skia = "0.6"
 gilrs-core = "0.3"
-log = "0.4"
 minifb = "0.19"
 serde = { version = "1", features = ["derive"] }
 toml = "0.5"
 notify = "4"
+log = "0.4"
 
 [profile.release]
 lto = "thin"

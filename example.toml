@@ -7,20 +7,20 @@ button_shape = { radius = 20 }
 
 
 buttons = [
-  { id = 2, pos = [400, 150], fill_active = '#f00' },                    # A
-  { id = 1, pos = [350, 200], fill_active = '#ff0' },                    # B
-  { id = 3, pos = [350, 100], fill_active = '#00f' },                    # X
-  { id = 0, pos = [300, 150], fill_active = '#0f0' },                    # Y
-  { id = 4, pos = [120, 20], shape = { size = [80, 40], radius = 10 } }, # LB
-  { id = 5, pos = [250, 20], shape = { size = [80, 40], radius = 10 } }, # RB
-  { id = 6, pos = [20, 20], shape = { size = [80, 40], radius = 10 } },  # LT
-  { id = 7, pos = [350, 20], shape = { size = [80, 40], radius = 10 } }, # RT
-  { id = 9, pos = [250, 110], shape = { radius = 10 } },                 # +
-  { id = 8, pos = [200, 110], shape = { radius = 10 } },                 # -
-  { id = 12, pos = [250, 140], shape = { radius = 10 } },                # home
-  { id = 13, pos = [200, 140], shape = { radius = 10 } },                # screen shot
-  { id = 10, pos = [173, 210], shape = { radius = 10 } },                # left stick
-  { id = 11, pos = [233, 210], shape = { radius = 10 } },                # right stick
+  { id = 2,  pos = [400, 150], fill_active = '#f00' },                     # A
+  { id = 1,  pos = [350, 200], fill_active = '#ff0' },                     # B
+  { id = 3,  pos = [350, 100], fill_active = '#00f' },                     # X
+  { id = 0,  pos = [300, 150], fill_active = '#0f0' },                     # Y
+  { id = 4,  pos = [120, 20],  shape = { size = [80, 40], radius = 10 } }, # LB
+  { id = 5,  pos = [250, 20],  shape = { size = [80, 40], radius = 10 } }, # RB
+  { id = 6,  pos = [20, 20],   shape = { size = [80, 40], radius = 10 } }, # LT
+  { id = 7,  pos = [350, 20],  shape = { size = [80, 40], radius = 10 } }, # RT
+  { id = 9,  pos = [250, 110], shape = { radius = 10 } },                  # +
+  { id = 8,  pos = [200, 110], shape = { radius = 10 } },                  # -
+  { id = 12, pos = [250, 140], shape = { radius = 10 } },                  # home
+  { id = 13, pos = [200, 140], shape = { radius = 10 } },                  # screen shot
+  { id = 10, pos = [173, 210], shape = { radius = 10 } },                  # left stick
+  { id = 11, pos = [233, 210], shape = { radius = 10 } },                  # right stick
 ]
 
 [[sticks]] # left

@@ -1,7 +1,12 @@
 mod config;
 mod gamepad;
 
-use std::{borrow::Cow, fs, path::PathBuf, time::Duration};
+use std::{
+    borrow::Cow,
+    fs,
+    path::{Path, PathBuf},
+    time::Duration,
+};
 
 use gilrs_core::{self, Gilrs};
 use log::{error, info};
@@ -53,9 +58,8 @@ impl From<&Gamepad> for Image {
 }
 
 impl Source {
-    fn update_config(&mut self) {
+    fn update_config(&mut self, path: &Path) {
         info!("config update");
-        let path = self.watcher.path.as_ref().unwrap();
         self.image.force_render = true;
         match toml::from_str(&fs::read_to_string(path).unwrap()) {
             Ok(config) => {
@@ -64,7 +68,6 @@ impl Source {
                 if self.image.width != bounds.right() as u32
                     || self.image.height != bounds.bottom() as u32
                 {
-                    info!("resized image");
                     self.image = (&self.gamepad).into();
                 }
             }
@@ -81,16 +84,10 @@ impl Source {
         if let Some(path) = settings.get::<Cow<str>, _>(SETTING_FILE) {
             let new = PathBuf::from(path.as_ref());
             if self.watcher.path.as_ref() != Some(&new) {
+                self.update_config(&new);
                 self.watcher.change_file(new).unwrap();
-                self.update_config();
             }
         }
-    }
-}
-
-impl Drop for Source {
-    fn drop(&mut self) {
-        info!("state destroyed")
     }
 }
 
@@ -102,15 +99,14 @@ impl Sourceable for Source {
         let gamepad = Gamepad::default();
         let gilrs = Gilrs::new().unwrap();
         let watcher = ConfigWatcher::new(Duration::from_millis(200));
-        let mut state = Source {
+        let mut source = Source {
             image: (&gamepad).into(),
             gilrs,
             gamepad,
             watcher,
         };
-        state.update_settings(&ctx.settings);
-        info!("created gamepad source");
-        state
+        source.update_settings(&ctx.settings);
+        source
     }
 
     fn get_id() -> ObsString {
@@ -131,26 +127,16 @@ impl GetPropertiesSource for Source {
             obs_string!("Gamepad ID"),
             NumberProp::new_int().with_range(0..max_gamepads),
         );
-        props.add(
-            SETTING_FILE,
-            obs_string!("Layout File"),
-            PathProp::new(PathType::File),
-        );
+        let path_config =
+            PathProp::new(PathType::File).with_filter(obs_string!("TOML config file (*.toml)"));
+        // TODO: with_default_path pointing to the example.toml in the config dir
+        props.add(SETTING_FILE, obs_string!("Layout File"), path_config);
         props
-    }
-}
-
-// TODO: https://github.com/bennetthardwick/rust-obs-plugins/pull/15
-// default to last active gamepad and an xbox config file
-impl GetDefaultsSource for Source {
-    fn get_defaults(_settings: &mut DataObj) {
-        unimplemented!()
     }
 }
 
 impl UpdateSource for Source {
     fn update(&mut self, settings: &mut DataObj, _context: &mut GlobalContext) {
-        info!("settings update");
         self.update_settings(settings);
     }
 }
@@ -177,14 +163,7 @@ impl VideoRenderSource for Source {
     fn video_render(&mut self, _ctx: &mut GlobalContext, _vid_ctx: &mut VideoRenderContext) {
         while let Ok(event) = self.watcher.rx.try_recv() {
             use DebouncedEvent::*;
-            match event {
-                Create(p) | Write(p) => {
-                    if self.watcher.path == Some(p) {
-                        self.update_config()
-                    }
-                }
-                _ => {}
-            }
+            if let Create(p) | Write(p) = event && self.watcher.path.as_deref() == Some(&p) { self.update_config(&p) }
         }
         if self.gamepad.update(&mut self.gilrs) || self.image.force_render {
             self.image.force_render = false;
@@ -194,6 +173,7 @@ impl VideoRenderSource for Source {
                 self.image.width * 4, // line size in bytes
                 false,
             );
+            info!("redraw");
         }
         self.image
             .obs
@@ -211,7 +191,7 @@ impl Module for GamepadModule {
     }
 
     fn load(&mut self, load_context: &mut LoadContext) -> bool {
-        let source = load_context
+        let source_info = load_context
             .create_source_builder::<Source>()
             .enable_get_name()
             .enable_get_width()
@@ -219,13 +199,9 @@ impl Module for GamepadModule {
             .enable_get_properties()
             .enable_update()
             .enable_video_render()
-            // .enable_get_defaults()
-            // .enable_activate()
-            // .enable_deactivate()
+            .with_icon(Icon::GameCapture)
             .build();
-        // TODO: set source icon_type
-
-        load_context.register_source(source);
+        load_context.register_source(source_info);
         Logger::new().init().is_ok()
     }
 

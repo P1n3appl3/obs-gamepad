@@ -701,7 +701,6 @@ dependencies = [
 [[package]]
 name = "obs-sys"
 version = "0.2.0"
-source = "git+https://github.com/bennetthardwick/rust-obs-plugins#08d66c684307bc804c9421ef2b0b4b963ceb4f4c"
 dependencies = [
  "bindgen 0.57.0",
  "cc",
@@ -712,8 +711,7 @@ dependencies = [
 
 [[package]]
 name = "obs-wrapper"
-version = "0.3.0"
-source = "git+https://github.com/bennetthardwick/rust-obs-plugins#08d66c684307bc804c9421ef2b0b4b963ceb4f4c"
+version = "0.3.1"
 dependencies = [
  "log",
  "num-traits",
