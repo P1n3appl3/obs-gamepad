@@ -8,7 +8,7 @@ name = "gamepad"
 crate-type = ["cdylib"]
 
 [dependencies]
-obs-wrapper = { path = "../../rust-obs-plugins" }
+obs-wrapper = "0.4"
 tiny-skia = "0.6"
 gilrs-core = "0.3"
 minifb = "0.19"

@@ -81,7 +81,7 @@ impl Source {
         if let Some(id) = settings.get(SETTING_GAMEPAD) {
             self.gamepad.switch_gamepad(&mut self.gilrs, id);
         }
-        if let Some(path) = settings.get::<Cow<str>, _>(SETTING_FILE) {
+        if let Some(path) = settings.get::<Cow<str>>(SETTING_FILE) {
             let new = PathBuf::from(path.as_ref());
             if self.watcher.path.as_ref() != Some(&new) {
                 self.update_config(&new);
@@ -173,7 +173,6 @@ impl VideoRenderSource for Source {
                 self.image.width * 4, // line size in bytes
                 false,
             );
-            info!("redraw");
         }
         self.image
             .obs
