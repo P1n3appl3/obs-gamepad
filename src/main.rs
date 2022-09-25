@@ -131,6 +131,6 @@ fn main() -> Result<(), ()> {
         times += 1;
         window.update_with_buffer(&buf, width, height).unwrap();
     }
-    println!("{}us average render time", total / times);
+    println!("{}us average render time per frame", total / times);
     Ok(())
 }
