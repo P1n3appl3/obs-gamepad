@@ -120,12 +120,13 @@ impl Sourceable for Source {
 
 impl GetPropertiesSource for Source {
     fn get_properties(&mut self) -> Properties {
+        // TODO: re-scan upon opening properties? this could be handled better
         let max_gamepads = self.gilrs.last_gamepad_hint();
         let mut props = Properties::new();
         props.add(
             SETTING_GAMEPAD,
             obs_string!("Gamepad ID"),
-            NumberProp::new_int().with_range(0..max_gamepads),
+            NumberProp::new_int().with_range(0..max_gamepads.max(1)),
         );
         let path_config =
             PathProp::new(PathType::File).with_filter(obs_string!("TOML config file (*.toml)"));

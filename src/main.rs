@@ -1,17 +1,14 @@
-#![allow(unused)]
 mod config;
 mod gamepad;
 
 use std::collections::BTreeMap;
 use std::io::Write;
-use std::path::PathBuf;
-use std::sync::mpsc;
 use std::time::{Duration, Instant};
 use std::{fs, io};
 
 use gilrs_core::Gilrs;
 use minifb::{Key, ScaleMode, Window, WindowOptions};
-use notify::{self, DebouncedEvent, RecursiveMode, Watcher};
+use notify::{self, DebouncedEvent};
 use tiny_skia::Pixmap;
 
 use config::ConfigWatcher;
@@ -63,7 +60,7 @@ fn main() -> Result<(), ()> {
         }
     };
     let watch_file = fs::canonicalize(arg).unwrap();
-    watcher.change_file(&watch_file);
+    watcher.change_file(&watch_file).unwrap();
 
     let config: Result<config::Gamepad, toml::de::Error> =
         toml::from_str(&fs::read_to_string(&watch_file).unwrap());

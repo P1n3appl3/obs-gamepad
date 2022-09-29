@@ -190,6 +190,7 @@ impl Gamepad {
         self.axes.clear();
     }
 
+    #[allow(unused)]
     pub fn is_empty(&self) -> bool {
         self.buttons.is_empty() && self.sticks.is_empty() && self.axes.is_empty()
     }
