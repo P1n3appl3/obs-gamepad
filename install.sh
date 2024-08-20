@@ -2,7 +2,7 @@
 
 set -ex
 
-plugin_dir="$HOME"/.config/obs-studio/plugins/gamepad
+plugin_dir="$HOME/.config/obs-studio/plugins/gamepad"
 mkdir -p "$plugin_dir"/bin/64bit
 src=$(realpath "$(dirname "${BASH_SOURCE[0]}")")
 cd "$src"

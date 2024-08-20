@@ -1,5 +1,7 @@
 mod config;
 mod gamepad;
+mod serial;
+mod usb;
 
 use std::collections::BTreeMap;
 use std::io::Write;
@@ -8,46 +10,18 @@ use std::{fs, io};
 
 use gilrs_core::Gilrs;
 use minifb::{Key, ScaleMode, Window, WindowOptions};
-use notify::{self, DebouncedEvent};
+use notify_debouncer_mini::{DebouncedEvent, DebouncedEventKind};
 use tiny_skia::Pixmap;
 
 use config::ConfigWatcher;
-use gamepad::Gamepad;
+use gamepad::{Gamepad, Inputs};
+use usb::UsbGamepad;
 
-fn create_image(gamepad: &Gamepad) -> Pixmap {
-    let bounds = gamepad.bounds();
-    let width = bounds.right() as usize;
-    let height = bounds.bottom() as usize;
-    Pixmap::new(width as u32, height as u32).unwrap()
-}
-
-fn pick_gamepad(gilrs: &mut Gilrs, gamepad: &mut Gamepad) {
-    let max_gamepads = gilrs.last_gamepad_hint();
-    let gamepads: BTreeMap<usize, String> = (0..max_gamepads)
-        .filter_map(|i| gilrs.gamepad(i).map(|g| (i, g.name().to_string())))
-        .collect();
-    println!("\nDetected {} gamepads:", max_gamepads);
-    for (id, name) in gamepads {
-        println!("{}: {}", id, name);
-    }
-    print!("\nEnter an id: ");
-    io::stdout().flush().unwrap();
-    let mut line = String::new();
-    io::stdin().read_line(&mut line).unwrap();
-    gamepad.switch_gamepad(gilrs, line.trim().parse().unwrap());
-}
-
-fn update_screen(img: &mut Pixmap, buf: &mut [u32]) {
-    for (pixel, n) in img.pixels_mut().iter().zip(buf.iter_mut()) {
-        *n = (pixel.red() as u32) << 16 | (pixel.green() as u32) << 8 | pixel.blue() as u32;
-    }
-}
-
-const FPS: Option<Duration> = Some(Duration::from_micros(16666));
+const FPS: usize = 60;
 const BENCHMARK: bool = false;
 
 fn main() -> Result<(), ()> {
-    let mut gilrs = Gilrs::new().unwrap();
+    let gilrs = Gilrs::new().unwrap();
     let mut gamepad = Gamepad::default();
     let mut watcher = ConfigWatcher::new(Duration::from_millis(100));
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -62,13 +36,22 @@ fn main() -> Result<(), ()> {
     let watch_file = fs::canonicalize(arg).unwrap();
     watcher.change_file(&watch_file).unwrap();
 
+    let max_gamepads = gilrs.last_gamepad_hint();
+    let id = pick_input(max_gamepads, &gilrs);
+
     let config: Result<config::Gamepad, toml::de::Error> =
         toml::from_str(&fs::read_to_string(&watch_file).unwrap());
-    match config {
-        Ok(c) => gamepad.load_config(&mut gilrs, &c),
-        Err(e) => println!("Invalid config: {}\n", e),
+    if let Err(e) = config.map(|c| {
+        if let Err(e) = gamepad.load::<UsbGamepad>(&c, (Gilrs::new().unwrap(), id)) {
+            println!("Failed to initialize backend {e:?}");
+        }
+    }) {
+        println!("Invalid config: {e}\n")
     }
-    pick_gamepad(&mut gilrs, &mut gamepad);
+
+    // } else {
+    //     Some(SerialGamepad::new("/dev/ttyACM0", 115200))
+    // };
 
     let options = WindowOptions {
         resize: false,
@@ -76,50 +59,50 @@ fn main() -> Result<(), ()> {
         ..Default::default()
     };
 
-    let mut img = create_image(&gamepad);
+    let mut img = create_image(&gamepad.inputs);
     let mut width = img.width() as usize;
     let mut height = img.height() as usize;
     let mut buf = vec![0u32; width * height];
     gamepad.render(&mut img);
     update_screen(&mut img, &mut buf);
     let mut window = Window::new("Test", width, height, options).unwrap();
-    window.limit_update_rate(FPS);
+    window.set_target_fps(FPS);
 
     let mut times = 0;
     let mut total = 0u128;
-    while window.is_open() && !(window.is_key_down(Key::Escape) || window.is_key_down(Key::Q)) {
-        while let Ok(event) = watcher.rx.try_recv() {
-            use DebouncedEvent::*;
-            match event {
-                Create(p) | Write(p) if watch_file == p => {
-                    match toml::from_str(&fs::read_to_string(p).unwrap()) {
-                        Ok(config) => {
-                            println!("Reloaded config...");
-                            gamepad.load_config(&mut gilrs, &config);
-                            let bounds = gamepad.bounds();
-                            if width != bounds.right() as usize
-                                || height != bounds.bottom() as usize
-                            {
-                                println!("Resized, making new window...");
-                                img = create_image(&gamepad);
-                                width = img.width() as usize;
-                                height = img.height() as usize;
-                                buf = vec![0u32; width * height];
-                                window = Window::new("Test", width, height, options).unwrap();
-                                window.limit_update_rate(FPS);
-                            }
-                            gamepad.render(&mut img);
-                            update_screen(&mut img, &mut buf);
+    while window.is_open()
+        && !(window.is_key_down(Key::Escape) || window.is_key_down(Key::Q))
+    {
+        while let Ok(DebouncedEvent { path, kind: DebouncedEventKind::Any }) =
+            watcher.rx.try_recv()
+        {
+            if watch_file == path {
+                match toml::from_str(&fs::read_to_string(path).unwrap()) {
+                    Ok(config) => {
+                        println!("Reloaded config...");
+                        gamepad.reload(&config);
+                        let bounds = gamepad.inputs.bounds();
+                        if width != bounds.right() as usize
+                            || height != bounds.bottom() as usize
+                        {
+                            println!("Resized, making new window...");
+                            img = create_image(&gamepad.inputs);
+                            width = img.width() as usize;
+                            height = img.height() as usize;
+                            buf = vec![0u32; width * height];
+                            window = Window::new("Test", width, height, options).unwrap();
+                            window.set_target_fps(FPS);
                         }
-                        Err(e) => println!("Config reload failed: {}", e),
+                        gamepad.render(&mut img);
+                        update_screen(&mut img, &mut buf);
                     }
+                    Err(e) => println!("Config reload failed: {}", e),
                 }
-                _ => {}
             }
         }
 
         let start = Instant::now();
-        if gamepad.update(&mut gilrs) || BENCHMARK {
+        if gamepad.poll() || BENCHMARK {
             gamepad.render(&mut img);
             update_screen(&mut img, &mut buf);
         }
@@ -130,4 +113,34 @@ fn main() -> Result<(), ()> {
     }
     println!("{}us average render time per frame", total / times);
     Ok(())
+}
+
+// returns selected id
+fn pick_input(max_gamepads: usize, gilrs: &Gilrs) -> usize {
+    let gamepads: BTreeMap<usize, String> = (0..max_gamepads)
+        .filter_map(|i| gilrs.gamepad(i).map(|g| (i, g.name().to_string())))
+        .collect();
+    println!("\nDetected {} gamepads:", max_gamepads);
+    for (id, name) in gamepads {
+        println!("{}: {}", id, name);
+    }
+    serial::print_ports(max_gamepads);
+    print!("\nEnter an id: ");
+    io::stdout().flush().unwrap();
+    let mut line = String::new();
+    io::stdin().read_line(&mut line).unwrap();
+    line.trim().parse().expect("input a number")
+}
+
+fn update_screen(img: &mut Pixmap, buf: &mut [u32]) {
+    for (pixel, n) in img.pixels_mut().iter().zip(buf.iter_mut()) {
+        *n = (pixel.red() as u32) << 16 | (pixel.green() as u32) << 8 | pixel.blue() as u32;
+    }
+}
+
+fn create_image(inputs: &Inputs) -> Pixmap {
+    let bounds = inputs.bounds();
+    let width = bounds.right() as usize;
+    let height = bounds.bottom() as usize;
+    Pixmap::new(width as u32, height as u32).unwrap()
 }

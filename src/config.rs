@@ -6,8 +6,11 @@ use std::{
     time::Duration,
 };
 
-use gilrs_core::EvCode;
-use notify::{DebouncedEvent, RecommendedWatcher, RecursiveMode, Watcher};
+use notify_debouncer_mini::{
+    new_debouncer,
+    notify::{self, RecommendedWatcher, RecursiveMode},
+    DebounceEventResult, DebouncedEvent, Debouncer,
+};
 use serde::{
     de::{self, Unexpected, Visitor},
     Deserialize, Deserializer,
@@ -17,7 +20,7 @@ use tiny_skia::{self, Path, PathBuilder, Rect};
 use crate::gamepad::{self, ColorPair};
 
 pub struct ConfigWatcher {
-    pub watcher: RecommendedWatcher,
+    pub debouncer: Debouncer<RecommendedWatcher>,
     pub rx: Receiver<DebouncedEvent>,
     pub path: Option<PathBuf>,
 }
@@ -26,7 +29,14 @@ impl ConfigWatcher {
     pub fn new(delay: Duration) -> Self {
         let (tx, rx) = mpsc::channel();
         Self {
-            watcher: RecommendedWatcher::new(tx, delay).unwrap(),
+            debouncer: new_debouncer(delay, move |e: DebounceEventResult| {
+                if let Ok(events) = e {
+                    for e in events {
+                        tx.send(e).ok();
+                    }
+                }
+            })
+            .unwrap(),
             rx,
             path: None,
         }
@@ -38,11 +48,10 @@ impl ConfigWatcher {
             if current.as_path() == path {
                 return Ok(());
             }
-            self.watcher.unwatch(current.parent().unwrap())?;
+            self.debouncer.watcher().unwatch(current.parent().unwrap())?;
         }
         self.path = Some(path.into());
-        self.watcher
-            .watch(path.parent().unwrap(), RecursiveMode::Recursive)
+        self.debouncer.watcher().watch(path.parent().unwrap(), RecursiveMode::Recursive)
     }
 }
 
@@ -116,12 +125,7 @@ impl Color {
     }
     // #rgb
     const fn from_rgb_packed(n: u32) -> Self {
-        Self::new(
-            (n >> 4 & 0xf0) as u8,
-            (n & 0xf0) as u8,
-            (n << 4) as u8,
-            0xff,
-        )
+        Self::new((n >> 4 & 0xf0) as u8, (n & 0xf0) as u8, (n << 4) as u8, 0xff)
     }
     // #rgba
     const fn from_rgba_packed(n: u32) -> Self {
@@ -164,15 +168,15 @@ impl<'de> Deserialize<'de> for Color {
                     rgb if rgb.len() == 6 => {
                         u32::from_str_radix(rgb, 16).map(Color::from_rgb).or(err)
                     }
-                    rgb if rgb.len() == 3 => u32::from_str_radix(rgb, 16)
-                        .map(Color::from_rgb_packed)
-                        .or(err),
+                    rgb if rgb.len() == 3 => {
+                        u32::from_str_radix(rgb, 16).map(Color::from_rgb_packed).or(err)
+                    }
                     rgba if rgba.len() == 8 => {
                         u32::from_str_radix(rgba, 16).map(Color::from_rgba).or(err)
                     }
-                    rgba if rgba.len() == 4 => u32::from_str_radix(rgba, 16)
-                        .map(Color::from_rgba_packed)
-                        .or(err),
+                    rgba if rgba.len() == 4 => {
+                        u32::from_str_radix(rgba, 16).map(Color::from_rgba_packed).or(err)
+                    }
                     _ => err,
                 }
             }
@@ -208,8 +212,7 @@ pub struct Button {
 }
 
 impl Button {
-    pub fn load(&self, gamepad: &gilrs_core::Gamepad, config: &Gamepad) -> gamepad::Button {
-        let buttons = gamepad.buttons();
+    pub fn load(&self, config: &Gamepad) -> gamepad::Button {
         let (x, y) = self.pos;
         let outline_active = self
             .outline_active
@@ -222,13 +225,7 @@ impl Button {
 
         use ButtonShape::*;
         gamepad::Button {
-            id: buttons
-                .get(self.id as usize)
-                .cloned()
-                .map(EvCode::into_u32)
-                .unwrap_or_default(),
-            id_index: self.id,
-            pressed: false,
+            id: self.id,
             path: match self.shape.unwrap_or(config.button_shape) {
                 Circle { radius } => PathBuilder::from_circle(x, y, radius).unwrap(),
                 RoundedRect { size, radius } => rounded_rect(x, y, size.0, size.1, radius),
@@ -246,7 +243,6 @@ impl Button {
     }
 }
 
-// TODO: octagonal gate
 #[derive(Clone, Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Stick {
@@ -256,6 +252,7 @@ pub struct Stick {
     pub invert_x: bool,
     #[serde(default)]
     pub invert_y: bool,
+    pub deadzone: Option<f32>,
     pub radius: Option<f32>,
     pub displacement: Option<f32>,
     pub fill: Option<Color>,
@@ -270,8 +267,7 @@ pub struct Stick {
 }
 
 impl Stick {
-    pub fn load(&self, gamepad: &gilrs_core::Gamepad, config: &Gamepad) -> gamepad::Stick {
-        let (x, y) = self.pos;
+    pub fn load(&self, config: &Gamepad) -> gamepad::Stick {
         let r = self.radius.unwrap_or(config.stick_radius);
         let outline_active = self
             .outline_active
@@ -281,18 +277,15 @@ impl Stick {
             .into();
         let outline_inactive = self.outline.or(config.outline).unwrap_or_default().into();
         let outline_weight = self.outline_weight.or(config.outline_weight).unwrap_or(2.0);
+        let (x, y) = self.pos;
         let gate_path = PathBuilder::from_circle(
             x,
             y,
             self.gate_radius.or(config.gate_radius).unwrap_or(r * 1.5),
         )
         .unwrap();
-        let gate_active = self
-            .gate_active
-            .or(self.gate)
-            .or(config.outline)
-            .unwrap_or_default()
-            .into();
+        let gate_active =
+            self.gate_active.or(self.gate).or(config.outline).unwrap_or_default().into();
         let gate_inactive = self.gate.or(config.outline).unwrap_or_default().into();
         let gate_weight = self
             .gate_weight
@@ -301,8 +294,9 @@ impl Stick {
             .unwrap_or(4.0);
 
         gamepad::Stick {
-            x: gamepad::RawAxis::new(self.axes.0, self.invert_x, gamepad),
-            y: gamepad::RawAxis::new(self.axes.1, self.invert_y, gamepad),
+            x: gamepad::RawAxis { id: self.axes.0, invert: self.invert_x },
+            y: gamepad::RawAxis { id: self.axes.1, invert: self.invert_y },
+            deadzone: self.deadzone.unwrap_or(0.05),
             path: PathBuilder::from_circle(x, y, r).unwrap(),
             displacement: self.displacement.unwrap_or(r * 3.0 / 4.0),
             fill: ColorPair {
@@ -313,23 +307,12 @@ impl Stick {
                 || self.outline_weight.is_some()
                 || self.outline.is_some()
                 || self.outline_active.is_some())
-            .then(|| {
-                (
-                    ColorPair::new(outline_active, outline_inactive),
-                    outline_weight,
-                )
-            }),
+            .then(|| (ColorPair::new(outline_active, outline_inactive), outline_weight)),
             gate: (self.gate_radius.is_some()
                 || self.gate_weight.is_some()
                 || self.gate.is_some()
                 || self.gate_active.is_some())
-            .then(|| {
-                (
-                    gate_path,
-                    ColorPair::new(gate_active, gate_inactive),
-                    gate_weight,
-                )
-            }),
+            .then(|| (gate_path, ColorPair::new(gate_active, gate_inactive), gate_weight)),
         }
     }
 }
@@ -365,11 +348,11 @@ pub struct Axis {
 }
 
 impl Axis {
-    pub fn load(&self, gamepad: &gilrs_core::Gamepad, config: &Gamepad) -> gamepad::Axis {
+    pub fn load(&self, config: &Gamepad) -> gamepad::Axis {
         let size = self.size.unwrap_or(config.axis_size);
         let outline_weight = self.outline_weight.or(config.outline_weight).unwrap_or(2.0);
         gamepad::Axis {
-            axis: gamepad::RawAxis::new(self.id, self.invert, gamepad),
+            axis: gamepad::RawAxis { id: self.id, invert: self.invert },
             path: Rect::from_xywh(self.pos.0, self.pos.1, size.0, size.1).unwrap(),
             direction: self.fill_dir.unwrap_or(config.fill_dir),
             fill: ColorPair {
