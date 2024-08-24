@@ -1,11 +1,12 @@
 use std::{
+    collections::HashMap,
     io::{BufRead, BufReader},
     sync::mpsc::{self, Receiver, TryRecvError},
     thread,
     time::Duration,
 };
 
-use log::{error, info};
+use log::{error, trace};
 use serialport::{FlowControl, SerialPortType};
 
 use crate::gamepad::{Backend, InputState, Inputs};
@@ -28,7 +29,6 @@ impl Backend for Haybox {
             .map_err(|e| log::error!("Port '{}' not available: {}", &path, e))?;
 
         let ids = inputs.buttons.iter().map(|b| b.id).collect();
-
         let (tx, rx) = mpsc::channel();
 
         thread::spawn(move || {
@@ -43,11 +43,6 @@ impl Backend for Haybox {
                         break;
                     }
                 }
-                // println!(
-                //     "{temp:0b} {:?} {:?}",
-                //     reader.get_ref().bytes_to_read(),
-                //     &buf.iter().map(|&c| c as char).collect::<String>()
-                // );
                 if tx.send(temp).is_err() {
                     break;
                 }
@@ -73,7 +68,7 @@ impl Backend for Haybox {
             latest = n;
             i += 1;
         }
-        info!("found {i} extra states");
+        trace!("found {i} extra states");
 
         for (i, n) in self.ids.iter().enumerate() {
             let new = latest & 1 << n != 0;
@@ -89,26 +84,30 @@ impl Backend for Haybox {
     }
 }
 
-pub fn print_ports() {
+/// returns name and description of all known serial ports
+pub fn get_ports() -> HashMap<String, String> {
+    let mut all_ports = HashMap::new();
     if let Ok(ports) = serialport::available_ports() {
-        for (id, port) in (10..).zip(&ports) {
+        for port in &ports {
             match &port.port_type {
                 SerialPortType::UsbPort(i) => {
-                    println!(
-                        "{}: {} USB {:x}:{:x} {} {}",
-                        id,
-                        port.port_name,
-                        i.vid,
-                        i.pid,
-                        i.manufacturer.clone().unwrap_or_default(),
-                        i.product.clone().unwrap_or_default()
+                    all_ports.insert(
+                        port.port_name.clone(),
+                        format!(
+                            "USB {:04x}:{:04x} {} {}",
+                            i.vid,
+                            i.pid,
+                            i.manufacturer.clone().unwrap_or_default(),
+                            i.product.clone().unwrap_or_default()
+                        ),
                     );
                 }
                 SerialPortType::Unknown => {
-                    println!("{}: {} (???)", id, port.port_name)
+                    all_ports.insert(port.port_name.clone(), "(???)".to_owned());
                 }
                 _ => {}
             }
         }
     }
+    all_ports
 }

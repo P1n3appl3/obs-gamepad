@@ -14,6 +14,7 @@ pub struct Gamepad<'b> {
 }
 
 impl<'b> Gamepad<'b> {
+    #[allow(dead_code)]
     fn new(config: &config::Gamepad) -> Self {
         let inputs: Inputs = config.into();
         let input_state = (&inputs).into();
@@ -28,6 +29,7 @@ impl<'b> Gamepad<'b> {
         }
     }
 
+    #[allow(dead_code)]
     pub fn load<B: Backend + 'b>(
         &mut self,
         config: &config::Gamepad,
@@ -70,7 +72,7 @@ pub trait Backend: Debug {
     where
         Self: Sized;
 
-    fn poll(&mut self, state: &mut InputState) -> bool; // -> Result<bool, ()>;
+    fn poll(&mut self, state: &mut InputState) -> bool;
 
     fn reload(&mut self, inputs: &Inputs);
 }
@@ -225,7 +227,7 @@ impl Gamepad<'_> {
         }
 
         for (stick, &(x, y)) in self.inputs.sticks.iter().zip(&self.input_state.sticks) {
-            let deadzone = 0.05;
+            let deadzone = stick.deadzone;
             let is_active =
                 !(-deadzone < x && x < deadzone && -deadzone < y && y < deadzone);
             let x = if stick.x.invert { -1.0 * x } else { x };
@@ -326,13 +328,5 @@ impl From<&Inputs> for InputState {
             axes: vec![0.5; inputs.axes.len()],
             sticks: vec![Default::default(); inputs.sticks.len()],
         }
-    }
-}
-
-impl InputState {
-    fn clear(&mut self) {
-        self.buttons.iter_mut().for_each(|b| *b = false);
-        self.axes.iter_mut().for_each(|f| *f = 0.5);
-        self.sticks.iter_mut().for_each(|s| *s = (0., 0.));
     }
 }

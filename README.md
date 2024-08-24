@@ -3,7 +3,7 @@
 I wanted to display my controller inputs while speedrunning celeste (and later
 while playing melee), and I just wanted to draw some transparent shapes for
 the buttons. I didn't want to set up a browser capture for something like
-https://gamepadviewer.com, and [input-overlay](https://github.com/univrsal/input-overlay)
+<https://gamepadviewer.com>, and [input-overlay](https://github.com/univrsal/input-overlay)
 was a bit complicated for my use case (though if I ever wanted more features
 it seems really cool and customizable), so I just wrote a little plugin to do
 it myself.

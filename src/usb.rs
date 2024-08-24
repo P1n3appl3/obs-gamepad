@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use gilrs_core::{AxisInfo, EvCode, Gilrs};
-use log::{error, info};
+use log::error;
 
 use crate::gamepad::{Backend, InputState, Inputs};
 
@@ -25,7 +25,6 @@ enum Xy {
     Y,
 }
 
-// backend: UsbGamepad::init(s, &inputs).expect("Failed to initialize backend")
 impl UsbGamepad {
     fn load_mappings(&mut self, inputs: &Inputs) -> Option<()> {
         let g = self.handle.gamepad(self.device_id)?;
@@ -37,7 +36,7 @@ impl UsbGamepad {
                 if let Some(&evcode) = g.buttons().get(b.id as usize) {
                     Some((evcode, i))
                 } else {
-                    error!("Couldn't find axis {i}");
+                    error!("Couldn't find button {i}");
                     None
                 }
             })
@@ -55,12 +54,12 @@ impl UsbGamepad {
             if let Some(&evcode) = g.axes().get(s.x.id as usize) {
                 self.axes.insert(evcode, AxisIndex::Stick(i, Xy::X));
             } else {
-                error!("Couldn't find axis {i}")
+                error!("Couldn't find stick axis {i}")
             }
             if let Some(&evcode) = g.axes().get(s.y.id as usize) {
                 self.axes.insert(evcode, AxisIndex::Stick(i, Xy::Y));
             } else {
-                error!("Couldn't find axis {i}")
+                error!("Couldn't find stick axis {i}")
             }
         }
         Some(())
@@ -96,12 +95,8 @@ impl Backend for UsbGamepad {
                 ev @ (ButtonPressed(code) | ButtonReleased(code)) => {
                     let new = matches!(ev, ButtonPressed(_));
                     if let Some(&i) = self.buttons.get(&code) {
-                        let old = state.buttons[i];
                         state.buttons[i] = new;
-                        if new == old {
-                            info!("they were the same???"); // TODO: remove
-                        }
-                        new != old
+                        true
                     } else {
                         false
                     }
@@ -149,4 +144,15 @@ fn remap(from: (f32, f32), to: (f32, f32), s: f32) -> f32 {
 
 fn normalized(cur: i32, info: AxisInfo) -> f32 {
     remap((info.min as f32, info.max as f32), (-1.0, 1.0), cur as f32)
+}
+
+pub fn get_devices(gilrs: &Gilrs) -> HashMap<usize, String> {
+    let mut devices = HashMap::new();
+    let max_gamepads = gilrs.last_gamepad_hint();
+    for (id, name) in
+        (0..max_gamepads).filter_map(|i| gilrs.gamepad(i).map(|g| (i, g.name())))
+    {
+        devices.insert(id, name.to_owned());
+    }
+    devices
 }

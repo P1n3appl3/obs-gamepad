@@ -21,7 +21,7 @@ use obs_wrapper::{
 use tiny_skia::Pixmap;
 
 use config::ConfigWatcher;
-use gamepad::{Gamepad, Inputs};
+use gamepad::{Backend, Gamepad, Inputs};
 use usb::UsbGamepad;
 
 obs_register_module!(GamepadModule);
@@ -33,7 +33,6 @@ struct Source<'b> {
     pub image: Image,
     pub gamepad: Gamepad<'b>,
     pub watcher: ConfigWatcher,
-    pub device_id: usize,
 }
 
 pub struct Image {
@@ -71,14 +70,7 @@ impl<'b> Source<'b> {
         self.image.force_render = true;
         match toml::from_str(&fs::read_to_string(path).unwrap()) {
             Ok(config) => {
-                // self.gamepad
-                //     .load::<UsbGamepad>(&config, (Gilrs::new().unwrap(), self.device_id))
-                //     .ok();
-                // TODO: selection list, reloads on view, and obviously stop hardcoding this to the
-                // linux-specific path 😅
-                self.gamepad
-                    .load::<Haybox>(&config, ("/dev/ttyACM0".to_owned(), 115200))
-                    .ok();
+                self.gamepad.reload(&config);
                 let bounds = self.gamepad.inputs.bounds();
                 if self.image.width != bounds.right() as u32
                     || self.image.height != bounds.bottom() as u32
@@ -93,13 +85,31 @@ impl<'b> Source<'b> {
     }
 
     fn update_settings(&mut self, settings: &DataObj) {
-        if let Some(id) = settings.get(SETTING_GAMEPAD) {
-            self.device_id = id;
-            if let Some(p) = self.watcher.path.clone() {
-                self.update_config(&p)
+        if let Some(name) = settings.get::<ObsString>(SETTING_GAMEPAD) {
+            info!("selected a new gamepad: {}", name.as_str());
+            match if let Ok(n) = name.as_str().parse() {
+                // TODO: clean up these temps (how do you type annotate trait objects in an
+                // expression?)
+                UsbGamepad::init((Gilrs::new().unwrap(), n), &self.gamepad.inputs).map(
+                    |b| {
+                        let temp: Box<dyn Backend> = Box::new(b);
+                        temp
+                    },
+                )
+            } else {
+                Haybox::init((name.as_str().to_owned(), 115200), &self.gamepad.inputs).map(
+                    |b| {
+                        let temp: Box<dyn Backend> = Box::new(b);
+                        temp
+                    },
+                )
+            } {
+                Ok(b) => self.gamepad.backend = Some(b),
+                Err(_) => error!("failed to load backend"),
             }
         }
         if let Some(path) = settings.get::<Cow<str>>(SETTING_FILE) {
+            info!("changed config");
             let new = PathBuf::from(path.as_ref());
             if self.watcher.path.as_ref() != Some(&new) {
                 self.update_config(&new);
@@ -119,8 +129,7 @@ impl<'b> Sourceable for Source<'b> {
     ) -> Source<'b> {
         let gamepad = Gamepad::default();
         let watcher = ConfigWatcher::new(Duration::from_millis(200));
-        let mut source =
-            Source { image: (&gamepad.inputs).into(), gamepad, watcher, device_id: 0 };
+        let mut source = Source { image: (&gamepad.inputs).into(), gamepad, watcher };
         source.update_settings(&ctx.settings);
         source
     }
@@ -136,19 +145,22 @@ impl<'b> Sourceable for Source<'b> {
 
 impl GetPropertiesSource for Source<'_> {
     fn get_properties(&mut self) -> Properties {
-        // TODO: re-scan upon opening properties? this could be handled better
-        // TODO: show list including gamepads, serial ports, etc.
-        let max_gamepads = Gilrs::new().unwrap().last_gamepad_hint();
         let mut props = Properties::new();
-        props.add(
-            SETTING_GAMEPAD,
-            obs_string!("Gamepad ID"),
-            NumberProp::new_int().with_range(0..max_gamepads.max(1)),
-        );
+
+        let mut list =
+            props.add_list::<ObsString>(SETTING_GAMEPAD, obs_string!("Gamepad"), false);
+        for (id, name) in usb::get_devices(&Gilrs::new().unwrap()) {
+            list.push(name.to_owned(), format!("{id}").into());
+        }
+        for (name, desc) in haybox::get_ports() {
+            list.push(format!("{desc} ({name})"), name.into());
+        }
+
         let path_config = PathProp::new(PathType::File)
             .with_filter(obs_string!("TOML config file (*.toml)"));
-        // TODO: with_default_path pointing to the example.toml in the config dir
+        // TODO: set default pointing to the example.toml in the config dir
         props.add(SETTING_FILE, obs_string!("Layout File"), path_config);
+
         props
     }
 }

@@ -46,7 +46,9 @@ fn main() -> Result<(), ()> {
         let res = if id < 10 {
             gamepad.load::<UsbGamepad>(&c, (Gilrs::new().unwrap(), id))
         } else {
-            gamepad.load::<Haybox>(&c, (ports[id - 10].port_name.clone(), 115200))
+            let name =
+                &ports.get(id - 10).expect("couldn't find or open serial port").port_name;
+            gamepad.load::<Haybox>(&c, (name.clone(), 115200))
         };
         if let Err(e) = res {
             println!("Failed to initialize backend {e:?}");
@@ -120,12 +122,12 @@ fn main() -> Result<(), ()> {
 // returns selected id
 fn pick_input(max_gamepads: usize, gilrs: &Gilrs) -> usize {
     println!("\nDetected {} gamepads:", max_gamepads);
-    for (id, name) in
-        (0..max_gamepads).filter_map(|i| gilrs.gamepad(i).map(|g| (i, g.name())))
-    {
-        println!("{}: {}", id, name);
+    for (id, name) in usb::get_devices(gilrs) {
+        println!("{id}: {name}");
     }
-    haybox::print_ports();
+    for (id, (name, desc)) in haybox::get_ports().iter().enumerate() {
+        println!("{}: {name} {desc}", id + 10);
+    }
     print!("\nEnter an id: ");
     io::stdout().flush().unwrap();
     let mut line = String::new();
