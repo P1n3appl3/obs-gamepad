@@ -1,6 +1,6 @@
 mod config;
 mod gamepad;
-mod serial;
+mod haybox;
 mod usb;
 
 use std::{
@@ -11,6 +11,7 @@ use std::{
 };
 
 use gilrs_core::{self, Gilrs};
+use haybox::Haybox;
 use log::{error, info};
 use notify_debouncer_mini::{DebouncedEvent, DebouncedEventKind};
 use obs_wrapper::{
@@ -70,8 +71,13 @@ impl<'b> Source<'b> {
         self.image.force_render = true;
         match toml::from_str(&fs::read_to_string(path).unwrap()) {
             Ok(config) => {
+                // self.gamepad
+                //     .load::<UsbGamepad>(&config, (Gilrs::new().unwrap(), self.device_id))
+                //     .ok();
+                // TODO: selection list, reloads on view, and obviously stop hardcoding this to the
+                // linux-specific path 😅
                 self.gamepad
-                    .load::<UsbGamepad>(&config, (Gilrs::new().unwrap(), self.device_id))
+                    .load::<Haybox>(&config, ("/dev/ttyACM0".to_owned(), 115200))
                     .ok();
                 let bounds = self.gamepad.inputs.bounds();
                 if self.image.width != bounds.right() as u32

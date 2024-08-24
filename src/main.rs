@@ -1,14 +1,14 @@
 mod config;
 mod gamepad;
-mod serial;
+mod haybox;
 mod usb;
 
-use std::collections::BTreeMap;
 use std::io::Write;
 use std::time::{Duration, Instant};
 use std::{fs, io};
 
 use gilrs_core::Gilrs;
+use haybox::Haybox;
 use minifb::{Key, ScaleMode, Window, WindowOptions};
 use notify_debouncer_mini::{DebouncedEvent, DebouncedEventKind};
 use tiny_skia::Pixmap;
@@ -21,7 +21,6 @@ const FPS: usize = 60;
 const BENCHMARK: bool = false;
 
 fn main() -> Result<(), ()> {
-    let gilrs = Gilrs::new().unwrap();
     let mut gamepad = Gamepad::default();
     let mut watcher = ConfigWatcher::new(Duration::from_millis(100));
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -36,22 +35,25 @@ fn main() -> Result<(), ()> {
     let watch_file = fs::canonicalize(arg).unwrap();
     watcher.change_file(&watch_file).unwrap();
 
+    let gilrs = Gilrs::new().unwrap();
+    let ports = serialport::available_ports().unwrap_or_default();
     let max_gamepads = gilrs.last_gamepad_hint();
     let id = pick_input(max_gamepads, &gilrs);
 
     let config: Result<config::Gamepad, toml::de::Error> =
         toml::from_str(&fs::read_to_string(&watch_file).unwrap());
     if let Err(e) = config.map(|c| {
-        if let Err(e) = gamepad.load::<UsbGamepad>(&c, (Gilrs::new().unwrap(), id)) {
+        let res = if id < 10 {
+            gamepad.load::<UsbGamepad>(&c, (Gilrs::new().unwrap(), id))
+        } else {
+            gamepad.load::<Haybox>(&c, (ports[id - 10].port_name.clone(), 115200))
+        };
+        if let Err(e) = res {
             println!("Failed to initialize backend {e:?}");
         }
     }) {
         println!("Invalid config: {e}\n")
     }
-
-    // } else {
-    //     Some(SerialGamepad::new("/dev/ttyACM0", 115200))
-    // };
 
     let options = WindowOptions {
         resize: false,
@@ -117,14 +119,13 @@ fn main() -> Result<(), ()> {
 
 // returns selected id
 fn pick_input(max_gamepads: usize, gilrs: &Gilrs) -> usize {
-    let gamepads: BTreeMap<usize, String> = (0..max_gamepads)
-        .filter_map(|i| gilrs.gamepad(i).map(|g| (i, g.name().to_string())))
-        .collect();
     println!("\nDetected {} gamepads:", max_gamepads);
-    for (id, name) in gamepads {
+    for (id, name) in
+        (0..max_gamepads).filter_map(|i| gilrs.gamepad(i).map(|g| (i, g.name())))
+    {
         println!("{}: {}", id, name);
     }
-    serial::print_ports(max_gamepads);
+    haybox::print_ports();
     print!("\nEnter an id: ");
     io::stdout().flush().unwrap();
     let mut line = String::new();
