@@ -25,7 +25,7 @@ fn main() -> Result<(), ()> {
     let mut watcher = ConfigWatcher::new(Duration::from_millis(100));
     let args: Vec<String> = std::env::args().skip(1).collect();
     let arg = match args.as_slice() {
-        [] => "test.toml",
+        [] => "layouts/test.toml",
         [path] => path,
         [_, _, ..] => {
             println!("Pass no args for debug mode, or just the path to a config file");

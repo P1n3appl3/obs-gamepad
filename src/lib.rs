@@ -68,19 +68,23 @@ impl<'b> Source<'b> {
     fn update_config(&mut self, path: &Path) {
         info!("config update");
         self.image.force_render = true;
-        match toml::from_str(&fs::read_to_string(path).unwrap()) {
-            Ok(config) => {
-                self.gamepad.reload(&config);
-                let bounds = self.gamepad.inputs.bounds();
-                if self.image.width != bounds.right() as u32
-                    || self.image.height != bounds.bottom() as u32
-                {
-                    self.image = (&self.gamepad.inputs).into();
+        if let Ok(contents) = fs::read_to_string(path) {
+            match toml::from_str(&contents) {
+                Ok(config) => {
+                    self.gamepad.reload(&config);
+                    let bounds = self.gamepad.inputs.bounds();
+                    if self.image.width != bounds.right() as u32
+                        || self.image.height != bounds.bottom() as u32
+                    {
+                        self.image = (&self.gamepad.inputs).into();
+                    }
+                }
+                Err(e) => {
+                    error!("Config reload failed: {}", e);
                 }
             }
-            Err(e) => {
-                error!("Config reload failed: {}", e);
-            }
+        } else {
+            error!("Couldn't read {}", path.to_string_lossy())
         }
     }
 

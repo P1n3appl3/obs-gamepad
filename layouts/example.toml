@@ -1,7 +1,7 @@
 # All options that accept colors will take any of the following formats:
 # "#RGB", "#RGBA", "#RRGGBB", "#RRGGBBAA"
 
-# These top level options apply to all buttons/sticks/axes unless they're overriden
+# These top level options apply to all buttons/sticks/axes unless they're overridden
 inactive = "#123"
 active = "#aaaa"
 # outline = "#282828"
@@ -14,7 +14,7 @@ outline_weight = 1.5
 button_shape = { radius = 20 }
 fill_dir = "left_to_right" # for axes
 
-# These button id's are from my nintendo switch pro controller, use test.toml
+# These button id's are from my switch pro controller, use test.toml
 # to figure out the ID's for your controllers buttons/axes.
 # You can color different parts of the button with: fill, fill_active, outline,
 # and outline_active. outline_weight is also overridable per-button

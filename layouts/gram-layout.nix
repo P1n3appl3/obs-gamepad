@@ -1,4 +1,4 @@
-# nix eval --json --file gram-layout.nix | yj -jt > gram-layout.toml
+# nix eval --json --file gram-layout.nix | yj -jt > gram.toml
 let
   blue = "#5BCEFA";
   pink = "#F5A9B8";

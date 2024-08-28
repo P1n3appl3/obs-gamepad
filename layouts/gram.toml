@@ -1,0 +1,172 @@
+outline_weight = 3.4
+
+[button_shape]
+radius = 21.8
+
+[[buttons]]
+fill = "#FFFFFF42"
+fill_active = "#FFFFFF"
+id = 0
+outline = "#FFFFFF"
+outline_active = "#FFFFFF"
+pos = [402.6, 204.06]
+
+[[buttons]]
+fill = "#5BCEFA42"
+fill_active = "#5BCEFA"
+id = 5
+outline = "#5BCEFA"
+outline_active = "#5BCEFA"
+pos = [138.26, 193.16]
+
+[[buttons]]
+fill = "#F5A9B842"
+fill_active = "#F5A9B8"
+id = 11
+outline = "#F5A9B8"
+outline_active = "#F5A9B8"
+pos = [193.7, 169.86]
+
+[[buttons]]
+fill = "#FFFFFF42"
+fill_active = "#FFFFFF"
+id = 9
+outline = "#FFFFFF"
+outline_active = "#FFFFFF"
+pos = [250.52, 174.36]
+
+[[buttons]]
+fill = "#F5A9B842"
+fill_active = "#F5A9B8"
+id = 10
+outline = "#F5A9B8"
+outline_active = "#F5A9B8"
+pos = [298.66, 207.22]
+
+[[buttons]]
+fill = "#5BCEFA42"
+fill_active = "#5BCEFA"
+id = 6
+outline = "#5BCEFA"
+outline_active = "#5BCEFA"
+pos = [495.1, 157.36]
+
+[[buttons]]
+fill = "#F5A9B842"
+fill_active = "#F5A9B8"
+id = 1
+outline = "#F5A9B8"
+outline_active = "#F5A9B8"
+pos = [543.54, 125.06]
+
+[[buttons]]
+fill = "#FFFFFF42"
+fill_active = "#FFFFFF"
+id = 18
+outline = "#FFFFFF"
+outline_active = "#FFFFFF"
+pos = [600.2, 121.32]
+
+[[buttons]]
+fill = "#F5A9B842"
+fill_active = "#F5A9B8"
+id = 19
+outline = "#F5A9B8"
+outline_active = "#F5A9B8"
+pos = [657.38, 143.6]
+
+[[buttons]]
+fill = "#5BCEFA42"
+fill_active = "#5BCEFA"
+id = 3
+outline = "#5BCEFA"
+outline_active = "#5BCEFA"
+pos = [504.82, 212.36]
+
+[[buttons]]
+fill = "#F5A9B842"
+fill_active = "#F5A9B8"
+id = 2
+outline = "#F5A9B8"
+outline_active = "#F5A9B8"
+pos = [552.88, 179.52]
+
+[[buttons]]
+fill = "#FFFFFF42"
+fill_active = "#FFFFFF"
+id = 7
+outline = "#FFFFFF"
+outline_active = "#FFFFFF"
+pos = [609.74, 175.52]
+
+[[buttons]]
+fill = "#F5A9B842"
+fill_active = "#F5A9B8"
+id = 8
+outline = "#F5A9B8"
+outline_active = "#F5A9B8"
+pos = [667.0, 197.96]
+
+[[buttons]]
+fill = "#5BCEFA42"
+fill_active = "#5BCEFA"
+id = 12
+outline = "#5BCEFA"
+outline_active = "#5BCEFA"
+pos = [290.32, 334.48]
+
+[[buttons]]
+fill = "#F5A9B842"
+fill_active = "#F5A9B8"
+id = 13
+outline = "#F5A9B8"
+outline_active = "#F5A9B8"
+pos = [329.54, 373.42]
+
+[[buttons]]
+fill = "#FFFFFF42"
+fill_active = "#FFFFFF"
+id = 14
+outline = "#FFFFFF"
+outline_active = "#FFFFFF"
+pos = [445.88, 317.58]
+
+[[buttons]]
+fill = "#5BCEFA42"
+fill_active = "#5BCEFA"
+id = 16
+outline = "#5BCEFA"
+outline_active = "#5BCEFA"
+pos = [485.12, 278.38]
+
+[[buttons]]
+fill = "#5BCEFA42"
+fill_active = "#5BCEFA"
+id = 17
+outline = "#5BCEFA"
+outline_active = "#5BCEFA"
+pos = [461.96, 372.12]
+
+[[buttons]]
+fill = "#F5A9B842"
+fill_active = "#F5A9B8"
+id = 4
+outline = "#F5A9B8"
+outline_active = "#F5A9B8"
+pos = [501.14, 333.16]
+
+[[buttons]]
+fill = "#FFFFFF42"
+fill_active = "#FFFFFF"
+id = 15
+outline = "#FFFFFF"
+outline_active = "#FFFFFF"
+pos = [540.42, 294.92]
+
+[[buttons]]
+fill = "#5BCEFA42"
+fill_active = "#5BCEFA"
+id = 20
+outline = "#5BCEFA"
+outline_active = "#5BCEFA"
+pos = [259.68, 122.34]
