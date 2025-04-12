@@ -16,7 +16,7 @@
         src = ./.;
         nativeBuildInputs = native-deps ++ [ pkgs.makeWrapper ];
         buildInputs = deps;
-        cargoHash = "sha256-tw4vpBpc4VBQ1GQ6RcubUIdCo5R6rVxgG2wA81mGVTY=";
+        cargoHash = "sha256-zX+1B45gj+3OpASM0mAilXcyKOt3dNNC5toiSN18yII=";
         postInstall = ''
           mkdir -p $out/lib/obs-plugins
           mv $out/lib/libgamepad.so $out/lib/obs-plugins/obs-gamepad.so
