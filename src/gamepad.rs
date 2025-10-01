@@ -194,7 +194,7 @@ impl Gamepad<'_> {
         }
 
         for (axis, &percent) in self.inputs.axes.iter().zip(&self.input_state.axes) {
-            let percent = if axis.axis.invert { -1.0 * percent } else { percent };
+            let percent = if axis.axis.invert { -percent } else { percent };
             // background
             let path = PathBuilder::from_rect(axis.path);
             paint.set_color(axis.fill.inactive);
@@ -230,8 +230,8 @@ impl Gamepad<'_> {
             let deadzone = stick.deadzone;
             let is_active =
                 !(-deadzone < x && x < deadzone && -deadzone < y && y < deadzone);
-            let x = if stick.x.invert { -1.0 * x } else { x };
-            let y = if stick.x.invert { -1.0 * y } else { y };
+            let x = if stick.x.invert { -x } else { x };
+            let y = if stick.x.invert { -y } else { y };
             let cx = stick.displacement * x * (1.0 - y * y / 2.0).sqrt();
             let cy = stick.displacement * y * (1.0 - x * x / 2.0).sqrt();
 

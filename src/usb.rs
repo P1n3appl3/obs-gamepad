@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 
+use color_eyre::eyre::{eyre, Report};
 use gilrs_core::{AxisInfo, EvCode, Gilrs};
 use log::error;
 
@@ -68,7 +69,7 @@ impl UsbGamepad {
 
 impl Backend for UsbGamepad {
     type InitState = (Gilrs, usize);
-    type Err = ();
+    type Err = Report;
 
     fn init(
         (handle, device_id): Self::InitState,
@@ -76,7 +77,9 @@ impl Backend for UsbGamepad {
     ) -> Result<Self, Self::Err> {
         let mut usb =
             Self { handle, buttons: HashMap::new(), axes: HashMap::new(), device_id };
-        usb.load_mappings(inputs).ok_or(()).map(|_| usb)
+        usb.load_mappings(inputs)
+            .map(|_| usb)
+            .ok_or(eyre!("couldn't open gamepad with index {device_id}"))
     }
 
     fn reload(&mut self, inputs: &Inputs) {
@@ -101,7 +104,6 @@ impl Backend for UsbGamepad {
                         false
                     }
                 }
-
                 AxisValueChanged(new, code) => {
                     if let Some(&idx) = self.axes.get(&code) {
                         let info = *gamepad.axis_info(code).unwrap();
@@ -132,6 +134,7 @@ impl Backend for UsbGamepad {
                     // self.connected = ev == Connected;
                     true
                 }
+                _ => todo!(),
             }
         }
         modified

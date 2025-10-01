@@ -21,6 +21,7 @@ const FPS: usize = 60;
 const BENCHMARK: bool = false;
 
 fn main() -> Result<(), ()> {
+    color_eyre::install().unwrap();
     let mut gamepad = Gamepad::default();
     let mut watcher = ConfigWatcher::new(Duration::from_millis(100));
     let args: Vec<String> = std::env::args().skip(1).collect();

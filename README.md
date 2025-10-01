@@ -16,7 +16,7 @@ celeste | melee
 
 ### Windows
 
-Download the [latest release](https://github.com/P1n3appl3/obs-gamepad/releases/latest) and then [follow these instructions](https://obsproject.com/kb/plugins-guide#install-or-remove-plugins) to copy it into your OBS plugins directory
+Download the [latest release](https://github.com/P1n3appl3/obs-gamepad/releases/latest) and then [follow these instructions](https://obsproject.com/kb/plugins-guide#install-or-remove-plugins) to copy it into your OBS plugins directory.
 
 ### Nix
 
@@ -36,7 +36,7 @@ pkgs.wrapOBS.override {} { plugins = [ obs-gamepad ]; };
 
 ### Other Linux Distros
 
-Run `install.sh` (which is just `cargo build` + moving the files around). If you want to write a PKGBUILD/deb/port/rpm/etc. for your distro, just take a look in [flake.nix](flake.nix) for the required native deps.
+Run [`install.sh`](install.sh) (which is just `cargo build` + moving the files around). If you want to write a PKGBUILD/deb/rpm/etc. for your distro, just take a look in [flake.nix](flake.nix) for the required native deps.
 
 ## Usage
 

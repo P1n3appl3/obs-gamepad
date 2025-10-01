@@ -10,13 +10,14 @@ crate-type = ["cdylib"]
 [dependencies]
 obs-wrapper = "0.4"
 tiny-skia = "0.11"
-gilrs-core = "0.5"
-minifb = "0.27"
+gilrs-core = "0.6"
+minifb = "0.28"
 serde = { version = "1", features = ["derive"] }
-toml = "0.8"
-notify-debouncer-mini = "0.4"
+toml = "0.9"
+notify-debouncer-mini = "0.7"
 log = "0.4"
-serialport = "4.5"
+serialport = { git = "https://github.com/erkki-silvola/serialport-rs", branch = "windows-overlapped-io" }
+color-eyre = "0.6"
 
 [profile.release]
 lto = "thin"

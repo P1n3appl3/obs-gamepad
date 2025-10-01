@@ -92,21 +92,11 @@ impl<'b> Source<'b> {
         if let Some(name) = settings.get::<ObsString>(SETTING_GAMEPAD) {
             info!("selected a new gamepad: {}", name.as_str());
             match if let Ok(n) = name.as_str().parse() {
-                // TODO: clean up these temps (how do you type annotate trait objects in an
-                // expression?)
-                UsbGamepad::init((Gilrs::new().unwrap(), n), &self.gamepad.inputs).map(
-                    |b| {
-                        let temp: Box<dyn Backend> = Box::new(b);
-                        temp
-                    },
-                )
+                UsbGamepad::init((Gilrs::new().unwrap(), n), &self.gamepad.inputs)
+                    .map(|b| Box::new(b) as Box<_>)
             } else {
-                Haybox::init((name.as_str().to_owned(), 115200), &self.gamepad.inputs).map(
-                    |b| {
-                        let temp: Box<dyn Backend> = Box::new(b);
-                        temp
-                    },
-                )
+                Haybox::init((name.as_str().to_owned(), 115200), &self.gamepad.inputs)
+                    .map(|b| Box::new(b) as Box<_>)
             } {
                 Ok(b) => self.gamepad.backend = Some(b),
                 Err(_) => error!("failed to load backend"),

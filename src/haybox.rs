@@ -6,6 +6,7 @@ use std::{
     time::Duration,
 };
 
+use color_eyre::{eyre::Context, Report};
 use log::{error, trace};
 use serialport::{FlowControl, SerialPortType};
 
@@ -19,14 +20,14 @@ pub struct Haybox {
 
 impl Backend for Haybox {
     type InitState = (String, u32);
-    type Err = ();
+    type Err = Report;
 
     fn init((path, rate): Self::InitState, inputs: &Inputs) -> Result<Self, Self::Err> {
         let port = serialport::new(&path, rate)
             .flow_control(FlowControl::Hardware)
             .timeout(Duration::from_millis(100))
             .open()
-            .map_err(|e| log::error!("Port '{}' not available: {}", &path, e))?;
+            .with_context(|| format!("Port '{path}' not available"))?;
 
         let ids = inputs.buttons.iter().map(|b| b.id).collect();
         let (tx, rx) = mpsc::channel();
