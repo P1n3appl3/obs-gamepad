@@ -194,7 +194,7 @@ impl Gamepad<'_> {
         }
 
         for (axis, &percent) in self.inputs.axes.iter().zip(&self.input_state.axes) {
-            let percent = if axis.axis.invert { -percent } else { percent };
+            let percent = if axis.axis.invert { 1.0 - percent } else { percent };
             // background
             let path = PathBuilder::from_rect(axis.path);
             paint.set_color(axis.fill.inactive);
