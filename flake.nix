@@ -12,11 +12,15 @@
     in
     {
       defaultPackage = pkgs.rustPlatform.buildRustPackage {
-        name = "obs-gamepad";
+        pname = "obs-gamepad";
+        version = "0.1.0";
         src = ./.;
         nativeBuildInputs = native-deps ++ [ pkgs.makeWrapper ];
         buildInputs = deps;
-        cargoHash = "sha256-zX+1B45gj+3OpASM0mAilXcyKOt3dNNC5toiSN18yII=";
+        cargoLock = {
+          lockFile = ./Cargo.lock;
+          outputHashes."serialport-4.7.3-alpha.0" = "sha256-JbPuIiCl21tHjwnZVMS50VWZ0Imzrre+OOV4KkTQ4hg=";
+        };
         postInstall = ''
           mkdir -p $out/lib/obs-plugins
           mv $out/lib/libgamepad.so $out/lib/obs-plugins/obs-gamepad.so
