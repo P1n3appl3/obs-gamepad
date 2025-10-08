@@ -35,6 +35,7 @@ fn main() -> Result<(), ()> {
     };
     let watch_file = fs::canonicalize(arg).unwrap();
     watcher.change_file(&watch_file).unwrap();
+    let mut last_change = Instant::now();
 
     let gilrs = Gilrs::new().unwrap();
     let ports = serialport::available_ports().unwrap_or_default();
@@ -72,15 +73,20 @@ fn main() -> Result<(), ()> {
     update_screen(&mut img, &mut buf);
     let mut window = Window::new("Test", width, height, options).unwrap();
     window.set_target_fps(FPS);
+    while watcher.rx.try_recv().is_ok() {} // drain initial file changes
 
     let mut times = 0;
     let mut total = 0u128;
     while window.is_open()
         && !(window.is_key_down(Key::Escape) || window.is_key_down(Key::Q))
     {
+        let now = Instant::now();
         while let Ok(DebouncedEvent { path, kind: DebouncedEventKind::Any }) =
             watcher.rx.try_recv()
         {
+            if now.duration_since(last_change) < Duration::from_millis(500) {
+                continue;
+            }
             if watch_file == path {
                 match toml::from_str(&fs::read_to_string(path).unwrap()) {
                     Ok(config) => {
@@ -104,15 +110,16 @@ fn main() -> Result<(), ()> {
                     Err(e) => println!("Config reload failed: {}", e),
                 }
             }
+            last_change = now;
         }
 
-        let start = Instant::now();
+        let frame_start = Instant::now();
         if gamepad.poll() || BENCHMARK {
             gamepad.render(&mut img);
             update_screen(&mut img, &mut buf);
         }
-        let end = Instant::now();
-        total += (end - start).as_micros();
+        let frame_end = Instant::now();
+        total += (frame_end - frame_start).as_micros();
         times += 1;
         window.update_with_buffer(&buf, width, height).unwrap();
     }
