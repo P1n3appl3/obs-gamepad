@@ -9,6 +9,7 @@ use std::{fs, io};
 
 use gilrs_core::Gilrs;
 use haybox::Haybox;
+use log::{error, info};
 use minifb::{Key, ScaleMode, Window, WindowOptions};
 use notify_debouncer_mini::{DebouncedEvent, DebouncedEventKind};
 use tiny_skia::Pixmap;
@@ -21,6 +22,7 @@ const FPS: usize = 60;
 const BENCHMARK: bool = false;
 
 fn main() -> Result<(), ()> {
+    env_logger::init();
     color_eyre::install().unwrap();
     let mut gamepad = Gamepad::default();
     let mut watcher = ConfigWatcher::new(Duration::from_millis(100));
@@ -53,10 +55,10 @@ fn main() -> Result<(), ()> {
             gamepad.load::<Haybox>(&c, (name.clone(), 115200))
         };
         if let Err(e) = res {
-            println!("Failed to initialize backend {e:?}");
+            error!("Failed to initialize backend {e:?}");
         }
     }) {
-        println!("Invalid config: {e}\n")
+        error!("Invalid config: {e}\n")
     }
 
     let options = WindowOptions {
@@ -80,13 +82,15 @@ fn main() -> Result<(), ()> {
     while window.is_open()
         && !(window.is_key_down(Key::Escape) || window.is_key_down(Key::Q))
     {
-        let now = Instant::now();
         while let Ok(DebouncedEvent { path, kind: DebouncedEventKind::Any }) =
             watcher.rx.try_recv()
         {
+            let now = Instant::now();
             if now.duration_since(last_change) < Duration::from_millis(500) {
                 continue;
             }
+            last_change = now;
+
             if watch_file == path {
                 match toml::from_str(&fs::read_to_string(path).unwrap()) {
                     Ok(config) => {
@@ -96,7 +100,7 @@ fn main() -> Result<(), ()> {
                         if width != bounds.right() as usize
                             || height != bounds.bottom() as usize
                         {
-                            println!("Resized, making new window...");
+                            info!("Resized, making new window...");
                             img = create_image(&gamepad.inputs);
                             width = img.width() as usize;
                             height = img.height() as usize;
@@ -107,10 +111,9 @@ fn main() -> Result<(), ()> {
                         gamepad.render(&mut img);
                         update_screen(&mut img, &mut buf);
                     }
-                    Err(e) => println!("Config reload failed: {}", e),
+                    Err(e) => error!("Config reload failed: {}", e),
                 }
             }
-            last_change = now;
         }
 
         let frame_start = Instant::now();
@@ -123,7 +126,7 @@ fn main() -> Result<(), ()> {
         times += 1;
         window.update_with_buffer(&buf, width, height).unwrap();
     }
-    println!("{}us average render time per frame", total / times);
+    info!("{}us average render time per frame", total / times);
     Ok(())
 }
 

@@ -56,11 +56,11 @@ displacement = 30
 id = 4
 pos = [75, 275]
 invert = true
-size = [80, 10]
+shape = { size = [80, 10] }
 
 [[axes]] # dpad y
 id = 5
 pos = [110, 240]
 invert = true
-size = [10, 80]
+shape = { size = [10, 80] }
 fill_dir = "top_to_bottom"

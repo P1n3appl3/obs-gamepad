@@ -7,15 +7,14 @@ use std::{
 };
 
 use notify_debouncer_mini::{
-    new_debouncer,
+    DebounceEventResult, DebouncedEvent, Debouncer, new_debouncer,
     notify::{self, RecommendedWatcher, RecursiveMode},
-    DebounceEventResult, DebouncedEvent, Debouncer,
 };
 use serde::{
-    de::{self, Unexpected, Visitor},
     Deserialize, Deserializer,
+    de::{self, Unexpected, Visitor},
 };
-use tiny_skia::{self, Path, PathBuilder, Rect};
+use tiny_skia::{self, Path, PathBuilder};
 
 use crate::gamepad::{self, ColorPair};
 
@@ -44,6 +43,7 @@ impl ConfigWatcher {
 
     pub fn change_file<P: AsRef<path::Path>>(&mut self, path: P) -> notify::Result<()> {
         let path = path.as_ref();
+        println!("{:?}", path);
         if let Some(current) = &self.path {
             if current.as_path() == path {
                 return Ok(());
@@ -187,12 +187,12 @@ impl<'de> Deserialize<'de> for Color {
 
 #[derive(Clone, Copy, Debug, Deserialize)]
 #[serde(untagged, deny_unknown_fields)]
-pub enum ButtonShape {
-    RoundedRect { size: (f32, f32), radius: f32 },
+pub enum Shape {
+    RoundedRect { size: (f32, f32), radius: Option<f32> },
     Circle { radius: f32 },
 }
 
-impl Default for ButtonShape {
+impl Default for Shape {
     fn default() -> Self {
         Self::Circle { radius: 15.0 }
     }
@@ -203,7 +203,7 @@ impl Default for ButtonShape {
 pub struct Button {
     pub id: u8,
     pub pos: (f32, f32),
-    pub shape: Option<ButtonShape>,
+    pub shape: Option<Shape>,
     pub fill: Option<Color>,
     pub fill_active: Option<Color>,
     pub outline_weight: Option<f32>,
@@ -213,7 +213,6 @@ pub struct Button {
 
 impl Button {
     pub fn load(&self, config: &Gamepad) -> gamepad::Button {
-        let (x, y) = self.pos;
         let outline_active = self
             .outline_active
             .or(self.outline)
@@ -223,12 +222,15 @@ impl Button {
         let outline_inactive = self.outline.or(config.outline).unwrap_or_default().into();
         let weight = self.outline_weight.or(config.outline_weight).unwrap_or(2.0);
 
-        use ButtonShape::*;
+        let (x, y) = self.pos;
+        use Shape::*;
         gamepad::Button {
             id: self.id,
             path: match self.shape.unwrap_or(config.button_shape) {
                 Circle { radius } => PathBuilder::from_circle(x, y, radius).unwrap(),
-                RoundedRect { size, radius } => rounded_rect(x, y, size.0, size.1, radius),
+                RoundedRect { size, radius } => {
+                    rounded_rect(x, y, size.0, size.1, radius.unwrap_or_default())
+                }
             },
             fill: ColorPair {
                 inactive: self.fill.unwrap_or(config.inactive).into(),
@@ -317,19 +319,14 @@ impl Stick {
     }
 }
 
-#[derive(Copy, Clone, Debug, Eq, PartialEq, Deserialize)]
+#[derive(Copy, Clone, Debug, Default, Eq, PartialEq, Deserialize)]
 #[serde(rename_all = "snake_case", deny_unknown_fields)]
 pub enum FillDir {
     TopToBottom,
+    #[default]
     LeftToRight,
     BottomToTop,
     RightToLeft,
-}
-
-impl Default for FillDir {
-    fn default() -> Self {
-        Self::LeftToRight
-    }
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -339,7 +336,7 @@ pub struct Axis {
     pub id: u8,
     #[serde(default)]
     pub invert: bool,
-    pub size: Option<(f32, f32)>,
+    pub shape: Option<Shape>,
     pub fill_dir: Option<FillDir>,
     pub fill: Option<Color>,
     pub fill_active: Option<Color>,
@@ -349,28 +346,36 @@ pub struct Axis {
 
 impl Axis {
     pub fn load(&self, config: &Gamepad) -> gamepad::Axis {
-        let size = self.size.unwrap_or(config.axis_size);
+        let axis = gamepad::RawAxis { id: self.id, invert: self.invert };
+
+        let (x, y) = self.pos;
+        use Shape::*;
+        let path = match self.shape.unwrap_or(config.axis_shape) {
+            Circle { radius } => PathBuilder::from_circle(x, y, radius).unwrap(),
+            RoundedRect { size, radius } => {
+                rounded_rect(x, y, size.0, size.1, radius.unwrap_or_default())
+            }
+        };
+
+        let direction = self.fill_dir.unwrap_or(config.fill_dir);
+
+        let fill = ColorPair {
+            inactive: self.fill.unwrap_or(config.inactive).into(),
+            active: self.fill_active.unwrap_or(config.active).into(),
+        };
+
         let outline_weight = self.outline_weight.or(config.outline_weight).unwrap_or(2.0);
-        gamepad::Axis {
-            axis: gamepad::RawAxis { id: self.id, invert: self.invert },
-            path: Rect::from_xywh(self.pos.0, self.pos.1, size.0, size.1).unwrap(),
-            direction: self.fill_dir.unwrap_or(config.fill_dir),
-            fill: ColorPair {
-                inactive: self.fill.unwrap_or(config.inactive).into(),
-                active: self.fill_active.unwrap_or(config.active).into(),
-            },
-            outline: (config.default_outline()
-                || self.outline.is_some()
-                || self.outline_weight.is_some())
-            .then(|| {
-                (
-                    self.outline
-                        .unwrap_or_else(|| config.outline.unwrap_or_default())
-                        .into(),
-                    outline_weight,
-                )
-            }),
-        }
+        let outline = (config.default_outline()
+            || self.outline.is_some()
+            || self.outline_weight.is_some())
+        .then(|| {
+            (
+                self.outline.unwrap_or_else(|| config.outline.unwrap_or_default()).into(),
+                outline_weight,
+            )
+        });
+
+        gamepad::Axis { axis, path, direction, fill, outline }
     }
 }
 
@@ -386,8 +391,8 @@ const fn default_stick() -> f32 {
     40.0
 }
 
-const fn default_axis() -> (f32, f32) {
-    (120.0, 20.0)
+const fn default_axis() -> Shape {
+    Shape::RoundedRect { size: (120.0, 20.0), radius: Some(5.0) }
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -402,13 +407,13 @@ pub struct Gamepad {
     #[serde(default)]
     pub outline_weight: Option<f32>,
     #[serde(default)]
-    pub button_shape: ButtonShape,
+    pub button_shape: Shape,
+    #[serde(default = "default_axis")]
+    pub axis_shape: Shape,
     #[serde(default = "default_stick")]
     pub stick_radius: f32,
     #[serde(default)]
     pub gate_radius: Option<f32>,
-    #[serde(default = "default_axis")]
-    pub axis_size: (f32, f32),
     #[serde(default)]
     pub fill_dir: FillDir,
     #[serde(default)]

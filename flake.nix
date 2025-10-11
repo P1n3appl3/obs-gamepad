@@ -13,7 +13,7 @@
     {
       defaultPackage = pkgs.rustPlatform.buildRustPackage {
         pname = "obs-gamepad";
-        version = "0.1.1";
+        version = "0.1.2";
         src = ./.;
         nativeBuildInputs = native-deps ++ [ pkgs.makeWrapper ];
         buildInputs = deps;

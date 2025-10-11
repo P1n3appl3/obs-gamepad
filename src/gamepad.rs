@@ -1,7 +1,7 @@
 use std::fmt::Debug;
 
 use tiny_skia::{
-    Color, FillRule, Paint, Path, PathBuilder, Pixmap, Rect, Stroke, Transform,
+    Color, FillRule, Mask, Paint, Path, PathBuilder, Pixmap, Rect, Stroke, Transform,
 };
 
 use crate::config::{self, FillDir};
@@ -91,13 +91,7 @@ impl Inputs {
             }
         }
         for a in &mut self.axes {
-            a.path = Rect::from_xywh(
-                a.path.x() - bounds.left(),
-                a.path.y() - bounds.top(),
-                a.path.width(),
-                a.path.height(),
-            )
-            .unwrap()
+            a.path = a.path.clone().transform(t).unwrap();
         }
     }
 
@@ -123,7 +117,7 @@ pub struct Button {
 #[derive(Clone, Debug)]
 pub struct Axis {
     pub axis: RawAxis,
-    pub path: Rect,
+    pub path: Path,
     pub direction: FillDir,
     pub fill: ColorPair,
     pub outline: Option<(Color, f32)>,
@@ -193,36 +187,44 @@ impl Gamepad<'_> {
             }
         }
 
+        let mut mask = Mask::new(img.width(), img.height()).unwrap();
         for (axis, &percent) in self.inputs.axes.iter().zip(&self.input_state.axes) {
-            let percent = if axis.axis.invert { 1.0 - percent } else { percent };
             // background
-            let path = PathBuilder::from_rect(axis.path);
+            let rect = axis.path.bounds();
             paint.set_color(axis.fill.inactive);
-            img.fill_path(&path, &paint, f, t, None);
+            img.fill_path(&axis.path, &paint, f, t, None);
 
+            let percent = if axis.axis.invert { 1.0 - percent } else { percent };
             // active fill
             use FillDir::*;
-            let mut left = axis.path.left();
-            let mut top = axis.path.top();
-            let mut right = axis.path.right();
-            let mut bottom = axis.path.bottom();
+            let mut left = rect.left();
+            let mut top = rect.top();
+            let mut right = rect.right();
+            let mut bottom = rect.bottom();
             match axis.direction {
-                TopToBottom => bottom -= axis.path.height() * percent,
-                LeftToRight => right -= axis.path.width() * percent,
-                BottomToTop => top += axis.path.height() * (1.0 - percent),
-                RightToLeft => left += axis.path.width() * (1.0 - percent),
+                TopToBottom => bottom -= rect.height() * percent,
+                LeftToRight => right -= rect.width() * percent,
+                BottomToTop => top += rect.height() * (1.0 - percent),
+                RightToLeft => left += rect.width() * (1.0 - percent),
             };
-            if let Some(rect) = Rect::from_ltrb(left, top, right, bottom) {
+            if let Some(rect) = Rect::from_ltrb(left, top, right, bottom)
+                && rect.width() > 0.05
+                && rect.height() > 0.05
+            {
+                mask.clear();
+                mask.fill_path(&axis.path, tiny_skia::FillRule::Winding, true, t);
+
                 let active_path = PathBuilder::from_rect(rect);
                 paint.set_color(axis.fill.active);
-                img.fill_path(&active_path, &paint, f, t, None);
+                // img.fill_path(&active_path, &paint, f, t, None);
+                img.fill_path(&active_path, &paint, f, t, Some(&mask));
             }
 
             // border
             if let Some((color, weight)) = axis.outline {
                 stroke.width = weight;
                 paint.set_color(color);
-                img.stroke_path(&path, &paint, &stroke, t, None);
+                img.stroke_path(&axis.path, &paint, &stroke, t, None);
             }
         }
 
@@ -280,11 +282,7 @@ impl ColorPair {
     }
 
     pub fn get(&self, active: bool) -> Color {
-        if active {
-            self.active
-        } else {
-            self.inactive
-        }
+        if active { self.active } else { self.inactive }
     }
 }
 
@@ -314,9 +312,9 @@ impl Stick {
 impl Axis {
     pub fn bounds(&self) -> Rect {
         if let Some((_, width)) = &self.outline {
-            expand(self.path, *width)
+            expand(self.path.bounds(), *width)
         } else {
-            self.path
+            self.path.bounds()
         }
     }
 }
@@ -325,7 +323,7 @@ impl From<&Inputs> for InputState {
     fn from(inputs: &Inputs) -> Self {
         Self {
             buttons: vec![false; inputs.buttons.len()],
-            axes: vec![0.5; inputs.axes.len()],
+            axes: vec![0.0; inputs.axes.len()],
             sticks: vec![Default::default(); inputs.sticks.len()],
         }
     }

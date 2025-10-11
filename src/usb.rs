@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use color_eyre::eyre::{eyre, Report};
 use gilrs_core::{AxisInfo, EvCode, Gilrs};
-use log::error;
+use log::{error, warn};
 
 use crate::gamepad::{Backend, InputState, Inputs};
 
@@ -37,7 +37,7 @@ impl UsbGamepad {
                 if let Some(&evcode) = g.buttons().get(b.id as usize) {
                     Some((evcode, i))
                 } else {
-                    error!("Couldn't find button {i}");
+                    warn!("Couldn't find button {i}");
                     None
                 }
             })
@@ -48,19 +48,19 @@ impl UsbGamepad {
             if let Some(&evcode) = g.axes().get(a.axis.id as usize) {
                 self.axes.insert(evcode, AxisIndex::Single(i));
             } else {
-                error!("Couldn't find axis {i}")
+                warn!("Couldn't find axis {i}")
             }
         }
         for (i, s) in inputs.sticks.iter().enumerate() {
             if let Some(&evcode) = g.axes().get(s.x.id as usize) {
                 self.axes.insert(evcode, AxisIndex::Stick(i, Xy::X));
             } else {
-                error!("Couldn't find stick axis {i}")
+                warn!("Couldn't find stick axis {i}")
             }
             if let Some(&evcode) = g.axes().get(s.y.id as usize) {
                 self.axes.insert(evcode, AxisIndex::Stick(i, Xy::Y));
             } else {
-                error!("Couldn't find stick axis {i}")
+                warn!("Couldn't find stick axis {i}")
             }
         }
         Some(())
